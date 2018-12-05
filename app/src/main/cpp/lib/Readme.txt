@@ -1,0 +1,1 @@
+Copy the libOpenCL.so to "NDK directory\platforms\android-23\arch-arm\usr\lib".

@@ -1,0 +1,51 @@
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 26
+    defaultConfig {
+        applicationId "gamemobile.kmu.ac.kr.vrapp3"
+        minSdkVersion 23
+        targetSdkVersion 26
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        externalNativeBuild {
+            cmake {
+                cppFlags "-O3 -mfloat-abi=softfp -mfpu=neon -ftree-vectorize -fopenmp -fno-exceptions -D__ANDROID__ -I. -I../include -Iinclude -Llib -landroid -llog -lOpenCL"
+                cFlags "-O3 -mfloat-abi=softfp -mfpu=neon -ftree-vectorize -fopenmp -fno-exceptions -D__ANDROID__ -I. -I../include -Iinclude -Llib -landroid -llog -lOpenCL"
+            }
+        }
+        ndk {
+            moduleName "native-lib"
+            stl "stlport_static"
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path 'CMakeLists.txt'
+        }
+    }
+    flavorDimensions 'cpuArch'
+    productFlavors {
+        arm7 {
+            dimension 'cpuArch'
+            ndk {
+                abiFilter 'armeabi-v7a'
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    testImplementation 'junit:junit:4.12'
+    androidTestImplementation 'com.android.support.test:runner:1.0.1'
+    androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.1'
+    implementation 'com.google.vr:sdk-base:1.130.0'
+}
