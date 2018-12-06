@@ -25,10 +25,10 @@ JNICALL Java_gamemobile_kmu_ac_kr_vrapp3_VRApp3Renderer_stringFromJNI(
     return env->NewStringUTF(hello.c_str());
 }
 
-extern "C" JNIEXPORT void
+extern "C" JNIEXPORT jfloatArray
 JNICALL Java_gamemobile_kmu_ac_kr_vrapp3_VRApp3Renderer_initSmallPtGPU(JNIEnv* env, jobject /* this */, jint u, jint f, jstring k, jint w, jint h, jstring s, jstring r, jobject assetManager)
 {
-    bool walllight = true;
+    bool walllight = false;
     srand(time(NULL));
 
     useGPU = u;
@@ -62,9 +62,17 @@ JNICALL Java_gamemobile_kmu_ac_kr_vrapp3_VRApp3Renderer_initSmallPtGPU(JNIEnv* e
 		BuildKDtree();
 		SetUpOpenCL();
 #endif
-        UpdateCamera();
         ReInit(0);
     }
+
+    jfloat cameraOrigTarg[6];
+    cameraOrigTarg[0] = camera.orig.s[0], cameraOrigTarg[1] = camera.orig.s[1], cameraOrigTarg[2] = camera.orig.s[2];
+    cameraOrigTarg[3] = camera.target.s[0], cameraOrigTarg[4] = camera.target.s[1], cameraOrigTarg[5] = camera.target.s[2];
+
+    jfloatArray jf_array = env->NewFloatArray(6);
+    env->SetFloatArrayRegion(jf_array, 0, 6, (const jfloat *)cameraOrigTarg);
+
+    return jf_array;
 }
 
 extern "C" JNIEXPORT void
