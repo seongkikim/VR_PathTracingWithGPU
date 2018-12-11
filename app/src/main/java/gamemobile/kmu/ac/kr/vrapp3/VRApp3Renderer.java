@@ -28,7 +28,7 @@ import javax.microedition.khronos.opengles.GL10;
  * Created by user on 2018-03-22.
  */
 
-public class VRApp3Renderer implements GvrView.Renderer { // GvrView.StereoRenderer {
+public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Renderer {
     private int mPositionHandle;
     private int mTexCoordinateHandle;
     private int mTextureUniformHandle;
@@ -104,6 +104,51 @@ public class VRApp3Renderer implements GvrView.Renderer { // GvrView.StereoRende
 
         mScreenPosition.put(screenPosition).position(0);
         mTextureCoordinate.put(textureCoordinateData).position(0);
+    }
+
+    private void saveToFile(Bitmap leftBmp, Bitmap rightBmp) {
+        String strFN;
+        FileOutputStream out = null;
+
+        if (leftBmp != null) {
+            strFN = Environment.getExternalStorageDirectory() + "/" + context.getPackageName() + "/images/left_image_" + new Integer(inv).toString() + ".png";
+
+            try {
+                out = new FileOutputStream(strFN);
+                leftBmp.compress(Bitmap.CompressFormat.PNG, 100, out); // bmp is your Bitmap instance
+                // PNG is a lossless format, the compression factor (100) is ignored
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                try {
+                    if (out != null) {
+                        out.close();
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        if (rightBmp!=null) {
+            strFN = Environment.getExternalStorageDirectory() + "/" + context.getPackageName() + "/images/right_image_" + new Integer(inv).toString() + ".png";
+
+            try {
+                out = new FileOutputStream(strFN);
+                rightBmp.compress(Bitmap.CompressFormat.PNG, 100, out); // bmp is your Bitmap instance
+                // PNG is a lossless format, the compression factor (100) is ignored
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                try {
+                    if (out != null) {
+                        out.close();
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
     }
 
     @Override
@@ -221,10 +266,10 @@ public class VRApp3Renderer implements GvrView.Renderer { // GvrView.StereoRende
         mTexCoordinateHandle = GLES20.glGetAttribLocation(mProgramHandle, "a_TexCoordinate");
         mTextureUniformHandle = GLES20.glGetUniformLocation(mProgramHandle, "u_Texture");
 
-        mTextures = new int[1];
+        mTextures = new int[2];
 
-        GLES20.glGenTextures(1, mTextures, 0);
-        if (mTextures[0] == 0)
+        GLES20.glGenTextures(2, mTextures, 0);
+        if (mTextures[0] == 0 || mTextures[1] == 0)
         {
             throw new RuntimeException("Error loading texture.");
         }
@@ -238,33 +283,32 @@ public class VRApp3Renderer implements GvrView.Renderer { // GvrView.StereoRende
         //GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST);
         //GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST);
 
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mTextures[1]);
+
+        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR);
+        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
+        //GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST);
+        //GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST);
+
         camOrigTarg = initSmallPtGPU(1, 128, "kernels/rendering_kernel.cl", texW, texH, "scenes/obj-model.txt", Environment.getExternalStorageDirectory() + "/" + context.getPackageName(), context.getAssets());
 
         Log.d("VRApp3Renderer", "End of onSurfaceCreated");
     }
 
-    @Override
     public void onDrawFrame(HeadTransform headTransform, Eye leftEye, Eye rightEye) {
         Log.i("VRApp3Renderer", "Start of onDrawFrame");
-        /*
-        float minvlev[] = new float[16];
-        float mlev[] = leftEye.getEyeView();
-        Matrix.invertM(minvlev, 0, mlev, 0);
 
-        float eyeOrg[] = new float[4];
-        eyeOrg[0] = camOrigTarg[0]; eyeOrg[1] = camOrigTarg[1]; eyeOrg[2] = camOrigTarg[2]; eyeOrg[3] = 0;
+        float camOrg[] = new float[3];
+        float camTar[] = new float[3];
 
-        float camOrg[] = new float[4];
-        Matrix.multiplyMV(camOrg,0, minvlev, 0, eyeOrg, 0);
+        camOrg[0] = camOrigTarg[0];camOrg[1] = camOrigTarg[1];camOrg[2] = camOrigTarg[2];
+        camTar[0] = camOrigTarg[3];camTar[1] = camOrigTarg[4];camTar[2] = camOrigTarg[5];
 
-        float eyeTar[] = new float[4];
-        eyeTar[0] = camOrigTarg[3]; eyeTar[1] = camOrigTarg[4]; eyeTar[2] = camOrigTarg[5]; eyeTar[3] = 0;
-
-        float camTar[] = new float[4];
-        Matrix.multiplyMV(camTar,0, minvlev, 0, eyeTar, 0);
-
+        camOrg[0] -= 1;
         reinitCamera(camOrg[0], camOrg[1], camOrg[2], camTar[0], camTar[1], camTar[2]);
-        */
+
         int[] arr_pixels = updateRendering();
         if (arr_pixels == null)
         {
@@ -272,27 +316,22 @@ public class VRApp3Renderer implements GvrView.Renderer { // GvrView.StereoRende
             return;
         }
 
-        Bitmap bitmap = Bitmap.createBitmap(arr_pixels, texW, texH, Bitmap.Config.ARGB_8888);
+        Bitmap leftBmp = Bitmap.createBitmap(arr_pixels, texW, texH, Bitmap.Config.ARGB_8888);
+
+        camOrg[0] += 2;
+        reinitCamera(camOrg[0], camOrg[1], camOrg[2], camTar[0], camTar[1], camTar[2]);
+
+        arr_pixels = updateRendering();
+        if (arr_pixels == null)
+        {
+            Log.e("VRApp3Renderer", "null is returned!!!");
+            return;
+        }
+
+        Bitmap rightBmp = Bitmap.createBitmap(arr_pixels, texW, texH, Bitmap.Config.ARGB_8888);
 
         if (bFile) {
-            String strFN = Environment.getExternalStorageDirectory() + "/" + context.getPackageName() + "/images/image_" + new Integer(inv).toString() + ".png";
-            FileOutputStream out = null;
-
-            try {
-                out = new FileOutputStream(strFN);
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out); // bmp is your Bitmap instance
-                // PNG is a lossless format, the compression factor (100) is ignored
-            } catch (Exception e) {
-                e.printStackTrace();
-            } finally {
-                try {
-                    if (out != null) {
-                        out.close();
-                    }
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
+            saveToFile(leftBmp, rightBmp);
         }
 
         GLES20.glClear(GLES20.GL_DEPTH_BUFFER_BIT | GLES20.GL_COLOR_BUFFER_BIT);
@@ -308,12 +347,24 @@ public class VRApp3Renderer implements GvrView.Renderer { // GvrView.StereoRende
         GLES20.glEnableVertexAttribArray(mTexCoordinateHandle);
 
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+
+        // Draw a left bitmap
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mTextures[0]);
         GLES20.glUniform1i(mTextureUniformHandle, 0);
 
-        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0);
-
+        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, leftBmp, 0);
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 6);
+
+        // Draw a right bitmap
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mTextures[1]);
+        GLES20.glUniform1i(mTextureUniformHandle, 0);
+
+        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, rightBmp, 0);
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 6);
+
+        // Finalize a drawing
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
+        GLES20.glUseProgram(0);
 
         Log.i("VRApp3Renderer", "End of onDrawFrame, "+String.valueOf(inv));
         inv++;
@@ -322,9 +373,20 @@ public class VRApp3Renderer implements GvrView.Renderer { // GvrView.StereoRende
     public void onDrawEye(Eye eye) {
         Log.i("VRApp3Renderer", "Start of onDrawEye");
 
-        float eyeOrig[] = new float[3];
-        eyeOrig = eye.getEyeView();
+        float camOrg[] = new float[3];
+        float camTar[] = new float[3];
 
+        camOrg[0] = camOrigTarg[0];camOrg[1] = camOrigTarg[1];camOrg[2] = camOrigTarg[2];
+        camTar[0] = camOrigTarg[3];camTar[1] = camOrigTarg[4];camTar[2] = camOrigTarg[5];
+
+        if (eye.getType() == Eye.Type.LEFT) {
+            camOrg[0] -= 1;
+        }
+        else if (eye.getType() == Eye.Type.RIGHT) {
+            camOrg[0] += 1;
+        }
+
+        reinitCamera(camOrg[0], camOrg[1], camOrg[2], camTar[0], camTar[1], camTar[2]);
         int[] arr_pixels = updateRendering();
 
         if (arr_pixels == null)
@@ -336,24 +398,8 @@ public class VRApp3Renderer implements GvrView.Renderer { // GvrView.StereoRende
         Bitmap bitmap = Bitmap.createBitmap(arr_pixels, texW, texH, Bitmap.Config.ARGB_8888);
 
         if (bFile) {
-            String strFN = Environment.getExternalStorageDirectory() + "/" + context.getPackageName() + "/images/image_" + new Integer(inv).toString() + ".png";
-            FileOutputStream out = null;
-
-            try {
-                out = new FileOutputStream(strFN);
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out); // bmp is your Bitmap instance
-                // PNG is a lossless format, the compression factor (100) is ignored
-            } catch (Exception e) {
-                e.printStackTrace();
-            } finally {
-                try {
-                    if (out != null) {
-                        out.close();
-                    }
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
+            if (eye.getType() == Eye.Type.LEFT) saveToFile(bitmap, null);
+            if (eye.getType() == Eye.Type.RIGHT) saveToFile(null, bitmap);
         }
 
         GLES20.glClear(GLES20.GL_DEPTH_BUFFER_BIT | GLES20.GL_COLOR_BUFFER_BIT);
@@ -373,11 +419,13 @@ public class VRApp3Renderer implements GvrView.Renderer { // GvrView.StereoRende
         GLES20.glUniform1i(mTextureUniformHandle, 0);
 
         GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0);
-
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 6);
 
-        Log.i("VRApp3Renderer", "End of onDrawEye, "+String.valueOf(inv));
+        // Finalize a drawing
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
+        GLES20.glUseProgram(0);
 
+        Log.i("VRApp3Renderer", "End of onDrawEye, "+String.valueOf(inv));
         inv++;
     }
 

@@ -130,6 +130,7 @@ void UniformSampleSphere(const float u1, const float u2, Vec *v) {
  const float phi = 2.f * FLOAT_PI * u2;
  const float xx = r * cos(phi);
  const float yy = r * sin(phi);
+
  vinit(*v, xx, yy, zz);
  //{ (*v).x = xx; (*v).y = yy; (*v).z = zz; };
 }
@@ -226,7 +227,7 @@ __constant
  ) {
 #if (ACCELSTR == 0)
 	float inf = (*t) = 1e20f;
-	short i = shapeCnt;
+	short i = shapeCnt - 1;
 	
 	for (; i--;) {
 		float d = 0.0f;
@@ -591,7 +592,8 @@ __constant
  
    vsub(shadowRay.d, lightPoint, *hitPoint);
    //{ (shadowRay.d).x = (spherePoint).x - (*hitPoint).x; (shadowRay.d).y = (spherePoint).y - (*hitPoint).y; (shadowRay.d).z = (spherePoint).z - (*hitPoint).z; };
-   const float len = sqrt(vdot(shadowRay.d, shadowRay.d));//((shadowRay.d).x * (shadowRay.d).x + (shadowRay.d).y * (shadowRay.d).y + (shadowRay.d).z * (shadowRay.d).z));
+   const float len = sqrt(vdot(shadowRay.d, shadowRay.d));
+   //((shadowRay.d).x * (shadowRay.d).x + (shadowRay.d).y * (shadowRay.d).y + (shadowRay.d).z * (shadowRay.d).z));
    vsmul(shadowRay.d, 1.f / len, shadowRay.d);
    //{ float k = (1.f / len); { (shadowRay.d).x = k * (shadowRay.d).x; (shadowRay.d).y = k * (shadowRay.d).y; (shadowRay.d).z = k * (shadowRay.d).z; } };
 
@@ -603,7 +605,8 @@ __constant
     wo = -wo;
 	wo = clamp(wo, 0.f, 1.f);
 	
-   const float wi = vdot(shadowRay.d, *normal);//((shadowRay.d).x * (*normal).x + (shadowRay.d).y * (*normal).y + (shadowRay.d).z * (*normal).z);
+   const float wi = vdot(shadowRay.d, *normal);
+   //((shadowRay.d).x * (*normal).x + (shadowRay.d).y * (*normal).y + (shadowRay.d).z * (*normal).z);
    if ((wi > 0.f) && (!IntersectP(shapes, shapeCnt,
 #if (ACCELSTR == 1)
         btn, btl,
@@ -611,8 +614,10 @@ __constant
         kng, kngCnt, kn, knCnt,
 #endif
         &shadowRay, len - EPSILON))) {
-    Vec c; vassign(c, light->e); //{ (c).x = (light->e).x; (c).y = (light->e).y; (c).z = (light->e).z; };
+    Vec c; vassign(c, light->e);
+    //{ (c).x = (light->e).x; (c).y = (light->e).y; (c).z = (light->e).z; };
     const float s = light->area * wi * wo / (len *len);
+
     vsmul(c, s, c);
 	//{ float k = (s); { (c).x = k * (c).x; (c).y = k * (c).y; (c).z = k * (c).z; } };
     vadd(*result, *result, c);
@@ -721,8 +726,9 @@ __constant
   //{ float k = (invSignDP); { (nl).x = k * (normal).x; (nl).y = k * (normal).y; (nl).z = k * (normal).z; } };
 
    Vec eCol; 
-   
-   vassign(eCol, s.e);//{ (eCol).x = (s.e).x; (eCol).y = (s.e).y; (eCol).z = (s.e).z; };
+
+   eCol = s.e; //vassign(eCol, s.e);
+   //{ (eCol).x = (s.e).x; (eCol).y = (s.e).y; (eCol).z = (s.e).z; };
 
    if (!viszero(eCol)) {
    //if (!(((eCol).x == 0.f) && ((eCol).x == 0.f) && ((eCol).z == 0.f))) {
@@ -762,8 +768,9 @@ __constant
    float r2 = GetRandom(seed0, seed1);
    float r2s = sqrt(r2);
 
-   Vec w; 
-   vassign(w, nl); //{ (w).x = (nl).x; (w).y = (nl).y; (w).z = (nl).z; };
+   Vec w;
+   w = nl; //vassign(w, nl)
+   // { (w).x = (nl).x; (w).y = (nl).y; (w).z = (nl).z; };
 
    Vec u, a;
    if (fabs(w.x) > .1f) {
@@ -818,13 +825,17 @@ __constant
    vsub(newDir, currentRay->d, newDir);
    //{ (newDir).x = (currentRay->d).x - (newDir).x; (newDir).y = (currentRay->d).y - (newDir).y; (newDir).z = (currentRay->d).z - (newDir).z; };
 
-   Ray reflRay; rinit(reflRay, hitPoint, newDir); //{ { ((reflRay).o).x = (hitPoint).x; ((reflRay).o).y = (hitPoint).y; ((reflRay).o).z = (hitPoint).z; }; { ((reflRay).d).x = (newDir).x; ((reflRay).d).y = (newDir).y; ((reflRay).d).z = (newDir).z; }; };
-   int into = (vdot(normal, nl) > 0); //(((normal).x * (nl).x + (normal).y * (nl).y + (normal).z * (nl).z) > 0);
+   Ray reflRay;
+   rinit(reflRay, hitPoint, newDir);
+   //{ { ((reflRay).o).x = (hitPoint).x; ((reflRay).o).y = (hitPoint).y; ((reflRay).o).z = (hitPoint).z; }; { ((reflRay).d).x = (newDir).x; ((reflRay).d).y = (newDir).y; ((reflRay).d).z = (newDir).z; }; };
+   int into = (vdot(normal, nl) > 0);
+   //(((normal).x * (nl).x + (normal).y * (nl).y + (normal).z * (nl).z) > 0);
 
    float nc = 1.f;
    float nt = 1.5f;
    float nnt = into ? nc / nt : nt / nc;
-   float ddn = vdot(currentRay->d, nl); //((currentRay->d).x * (nl).x + (currentRay->d).y * (nl).y + (currentRay->d).z * (nl).z);
+   float ddn = vdot(currentRay->d, nl);
+   //((currentRay->d).x * (nl).x + (currentRay->d).y * (nl).y + (currentRay->d).z * (nl).z);
    float cos2t = 1.f - nnt * nnt * (1.f - ddn * ddn);
 
    if (cos2t < 0.f) {
@@ -852,7 +863,8 @@ __constant
    float a = nt - nc;
    float b = nt + nc;
    float R0 = a * a / (b * b);
-   float c = 1 - (into ? -ddn : vdot(transDir, normal)); //((transDir).x * (normal).x + (transDir).y * (normal).y + (transDir).z * (normal).z));
+   float c = 1 - (into ? -ddn : vdot(transDir, normal));
+   //((transDir).x * (normal).x + (transDir).y * (normal).y + (transDir).z * (normal).z));
 
    float Re = R0 + (1 - R0) * c * c * c * c*c;
    float Tr = 1.f - Re;
@@ -978,9 +990,12 @@ __constant
  __global float *debug2
 #endif
  ) {
- Ray currentRay; rassign(currentRay, *startRay); //{ { ((currentRay).o).x = ((*startRay).o).x; ((currentRay).o).y = ((*startRay).o).y; ((currentRay).o).z = ((*startRay).o).z; }; { ((currentRay).d).x = ((*startRay).d).x; ((currentRay).d).y = ((*startRay).d).y; ((currentRay).d).z = ((*startRay).d).z; }; };
- Vec rad; vinit(rad, 0.f, 0.f, 0.f); //{ (rad).x = 0.f; (rad).y = 0.f; (rad).z = 0.f; };
- Vec throughput; vinit(throughput, 1.f, 1.f, 1.f); //{ (throughput).x = 1.f; (throughput).y = 1.f; (throughput).z = 1.f; };
+ Ray currentRay; rassign(currentRay, *startRay);
+ //{ { ((currentRay).o).x = ((*startRay).o).x; ((currentRay).o).y = ((*startRay).o).y; ((currentRay).o).z = ((*startRay).o).z; }; { ((currentRay).d).x = ((*startRay).d).x; ((currentRay).d).y = ((*startRay).d).y; ((currentRay).d).z = ((*startRay).d).z; }; };
+ Vec rad; vinit(rad, 0.f, 0.f, 0.f);
+ //{ (rad).x = 0.f; (rad).y = 0.f; (rad).z = 0.f; };
+ Vec throughput; vinit(throughput, 1.f, 1.f, 1.f);
+ //{ (throughput).x = 1.f; (throughput).y = 1.f; (throughput).z = 1.f; };
 
  unsigned int depth = 0;
  char specularBounce = 1;
@@ -1029,8 +1044,10 @@ __constant
 
   case TRIANGLE:
 	{
-		Vec e1; vsub(e1, obj->t.p2, obj->t.p1);
-		Vec e2; vsub(e2, obj->t.p3, obj->t.p1);
+		Vec e1;
+		vsub(e1, obj->t.p2, obj->t.p1);
+		Vec e2;
+		vsub(e2, obj->t.p3, obj->t.p1);
 		
 		vxcross(normal, e1, e2);
 		//{ normal.x = (e1).y * (e2).z - (e1).z * (e2).y; normal.y = (e1).z * (e2).x - (e1).x * (e2).z; normal.z = (e1).x * (e2).y - (e1).y * (e2).x; }
@@ -1049,7 +1066,8 @@ __constant
   vsmul(nl, invSignDP, normal);
   //{ float k = (invSignDP); { (nl).x = k * (normal).x; (nl).y = k * (normal).y; (nl).z = k * (normal).z; } };
 
-  Vec eCol; vassign(eCol, obj->e); //{ (eCol).x = (obj->e).x; (eCol).y = (obj->e).y; (eCol).z = (obj->e).z; };
+  Vec eCol; vassign(eCol, obj->e);
+  //{ (eCol).x = (obj->e).x; (eCol).y = (obj->e).y; (eCol).z = (obj->e).z; };
   if (!viszero(eCol)) {
   //if (!(((eCol).x == 0.f) && ((eCol).x == 0.f) && ((eCol).z == 0.f))) {
    if (specularBounce) {
@@ -1204,9 +1222,10 @@ __kernel void GenerateCameraRay_exp(
  //{ (rdir).x = camera->x.x * kcx + camera->y.x * kcy + camera->dir.x; (rdir).y = camera->x.y * kcx + camera->y.y * kcy + camera->dir.y; (rdir).z = camera->x.z * kcx + camera->y.z * kcy + camera->dir.z; };
 
  Vec rorig;
- vsmul(rorig, 0.1f, rdir);
+ rorig = camera->orig;
+ //vsmul(rorig, 0.1f, rdir);
  //{ float k = (0.1f); { (rorig).x = k * (rdir).x; (rorig).y = k * (rdir).y; (rorig).z = k * (rdir).z; } };
- vadd(rorig, rorig, camera->orig);
+ //vadd(rorig, rorig, camera->orig);
  //{ (rorig).x = (rorig).x + (camera->orig).x; (rorig).y = (rorig).y + (camera->orig).y; (rorig).z = (rorig).z + (camera->orig).z; }
 
  vnorm(rdir);
@@ -1237,11 +1256,13 @@ __kernel void FillPixel_exp(
  } else {
   const float k1 = currentSample;
   const float k2 = 1.f / (currentSample + 1.f);
+
+  vmad(colors[sgid], colors[sgid], k1, results[sgid].p);
+  vsmul(colors[sgid], k2, colors[sgid]);
   //colors[sgid].x = (colors[sgid].x * k1 + results[sgid].p.x) * k2;
   //colors[sgid].y = (colors[sgid].y * k1 + results[sgid].p.y) * k2;
   //colors[sgid].z = (colors[sgid].z * k1 + results[sgid].p.z) * k2;
-  vmad(colors[sgid], colors[sgid], k1, results[sgid].p);
-  vsmul(colors[sgid], k2, colors[sgid]);
+
  }
 #ifdef __ANDROID__
  pixels[locPixel] = (toInt(colors[sgid].x)  << 16) |

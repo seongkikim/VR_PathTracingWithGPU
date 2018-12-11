@@ -226,7 +226,7 @@ __constant
  ) {
 #if (ACCELSTR == 0)
 	float inf = (*t) = 1e20f;
-	short i = shapeCnt;
+	short i = shapeCnt - 1;
 	
 	for (; i--;) {
 		float d = 0.0f;
@@ -400,7 +400,7 @@ __constant
  const Ray *r,
  const float maxt) {
 #if (ACCELSTR == 0)
-    short i = shapeCnt;
+    short i = shapeCnt -1;
 
     for (; i--;) {
         float d = 0.0f;
