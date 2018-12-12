@@ -509,7 +509,7 @@ bool ReadTxt(char *fileName, bool bvr) {
 	return true;
 }
 
-bool ReadScene(const char *fileName) {
+bool ReadScene(const char *fileName, bool bvr) {
 	LOGI("Reading scene: %s\n", fileName);
 
 	FILE *f = fopen(fileName, "r");
@@ -525,6 +525,13 @@ bool ReadScene(const char *fileName) {
 		LOGE("Failed to read 6 camera parameters: %d\n", c);
 		return false;
 	}
+
+    if (bvr) {
+        cameraRight = cameraLeft;
+
+        cameraLeft.orig.s[0] -= DIFF_LEFTRIGHTEYE;
+        cameraRight.orig.s[0] += 2 * DIFF_LEFTRIGHTEYE;
+    }
 
 	/* Read the shape count */
 	c = fscanf(f,"size %u\n", &shapeCnt);
@@ -578,7 +585,7 @@ bool ReadScene(const char *fileName) {
     return true;
 }
 
-bool ReadPly(char *fileName) {
+bool ReadPly(char *fileName, bool bvr) {
 	typedef struct Face {
 		unsigned char intensity; /* this user attaches intensity to faces */
 		unsigned char nverts;    /* number of vertex indices in list */
@@ -620,6 +627,13 @@ bool ReadPly(char *fileName) {
 
 	cameraLeft.orig.s[0] = 0.0f, cameraLeft.orig.s[1] = 0.0f, cameraLeft.orig.s[2] = 75.0f,
 	cameraLeft.target.s[0] = 0.0f, cameraLeft.target.s[1] = 0.0f, cameraLeft.target.s[2] = 0.0f;
+
+    if (bvr) {
+        cameraRight = cameraLeft;
+
+        cameraLeft.orig.s[0] -= DIFF_LEFTRIGHTEYE;
+        cameraRight.orig.s[0] += 2 * DIFF_LEFTRIGHTEYE;
+    }
 
 	/* open a PLY file for reading */
 	ply = ply_open_for_reading(fileName, &nelems, &elist, &file_type, &version);
@@ -723,8 +737,8 @@ bool Read(char *fileName, bool *walllight, bool bvr) {
 	bool ret = true;
 	char *fileExt = GetFileExt(fileName);
 
-	if (!strcmp(fileExt, "scn")) ret = ReadScene(fileName);
-	else if (!strcmp(fileExt, "ply")) ret = ReadPly(fileName);
+	if (!strcmp(fileExt, "scn")) ret = ReadScene(fileName, bvr);
+	else if (!strcmp(fileExt, "ply")) ret = ReadPly(fileName, bvr);
 	else if (!strcmp(fileExt, "txt"))
 	{
 		ret = ReadTxt(fileName, bvr);
