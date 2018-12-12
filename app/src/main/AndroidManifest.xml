@@ -13,6 +13,9 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="com.google.intent.category.CARDBOARD" />
+                <category android:name="com.google.intent.category.DAYDREAM" />
+                <category android:name="com.google.intent.category.DAYDREAM_CONTROLLER_OPTIONAL" />
             </intent-filter>
         </activity>
     </application>
