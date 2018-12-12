@@ -39,7 +39,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 extern short width;
 extern short height;
-extern unsigned int *pixels;
+extern unsigned int *pixelsLeft, *pixelsRight;
 extern unsigned int renderingFlags;
 extern char captionBuffer[256];
 
@@ -48,11 +48,12 @@ extern int amiSmallptCPU;
 //extern void InitGlut(int argc, char *argv[], char *windowTittle);
 double WallClockTime();
 
-bool Read(char *fileName, bool *walllight);
-void UpdateCamera();
+bool Read(char *fileName, bool *walllight, bool bvr);
+void UpdateCamera(bool bvr);
 void ReInit(const int reallocBuffers);
+void ReInitVR(const int reallocBuffers);
 #ifdef __ANDROID__
-void touchFunc(int x, int y);
+void touchFunc(int x, int y, bool bvr);
 #endif
 #endif	/* _DISPLAYFUNC_H */
 

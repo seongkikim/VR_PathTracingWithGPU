@@ -992,7 +992,7 @@ __constant
  ) {
  Ray currentRay; rassign(currentRay, *startRay);
  //{ { ((currentRay).o).x = ((*startRay).o).x; ((currentRay).o).y = ((*startRay).o).y; ((currentRay).o).z = ((*startRay).o).z; }; { ((currentRay).d).x = ((*startRay).d).x; ((currentRay).d).y = ((*startRay).d).y; ((currentRay).d).z = ((*startRay).d).z; }; };
- Vec rad; vinit(rad, 0.f, 0.f, 0.f);
+ Vec rad; vclr(rad);
  //{ (rad).x = 0.f; (rad).y = 0.f; (rad).z = 0.f; };
  Vec throughput; vinit(throughput, 1.f, 1.f, 1.f);
  //{ (throughput).x = 1.f; (throughput).y = 1.f; (throughput).z = 1.f; };
@@ -1029,16 +1029,17 @@ __global
 __constant
 #endif
   const Shape *obj = &shapes[id];
-
   Vec hitPoint;
+
   vsmul(hitPoint, t, currentRay.d);
   //{ float k = (t); { (hitPoint).x = k * (currentRay.d).x; (hitPoint).y = k * (currentRay.d).y; (hitPoint).z = k * (currentRay.d).z; } };
   vadd(hitPoint, currentRay.o, hitPoint);
   //{ (hitPoint).x = (currentRay.o).x + (hitPoint).x; (hitPoint).y = (currentRay.o).y + (hitPoint).y; (hitPoint).z = (currentRay.o).z + (hitPoint).z; };
 
   Vec normal;
+
   switch (obj->type) {
-  case SPHERE:            
+  case SPHERE:
 	vsub(normal, hitPoint, obj->s.p);
 	break;
 
@@ -1055,6 +1056,7 @@ __constant
 		break;
 	}
   }
+
   vnorm(normal);
   //{ float l = 1.f / sqrt(((normal).x * (normal).x + (normal).y * (normal).y + (normal).z * (normal).z)); { float k = (l); { (normal).x = k * (normal).x; (normal).y = k * (normal).y; (normal).z = k * (normal).z; } }; };
 
@@ -1066,7 +1068,9 @@ __constant
   vsmul(nl, invSignDP, normal);
   //{ float k = (invSignDP); { (nl).x = k * (normal).x; (nl).y = k * (normal).y; (nl).z = k * (normal).z; } };
 
-  Vec eCol; vassign(eCol, obj->e);
+  Vec eCol;
+
+  vassign(eCol, obj->e);
   //{ (eCol).x = (obj->e).x; (eCol).y = (obj->e).y; (eCol).z = (obj->e).z; };
   if (!viszero(eCol)) {
   //if (!(((eCol).x == 0.f) && ((eCol).x == 0.f) && ((eCol).z == 0.f))) {
@@ -1096,6 +1100,7 @@ __constant
     kng, kngCnt, kn, knCnt,
 #endif
     seed0, seed1, &hitPoint, &nl, &Ld);
+
    vmul(Ld, throughput, Ld);
    //{ (Ld).x = (throughput).x * (Ld).x; (Ld).y = (throughput).y * (Ld).y; (Ld).z = (throughput).z * (Ld).z; };
    vadd(rad, rad, Ld);
@@ -1107,6 +1112,7 @@ __constant
    specularBounce = 1;
 
    Vec newDir;
+
    vsmul(newDir,  2.f * vdot(normal, currentRay.d), normal);
    //{ float k = (2.f * ((normal).x * (currentRay.d).x + (normal).y * (currentRay.d).y + (normal).z * (currentRay.d).z)); { (newDir).x = k * (normal).x; (newDir).y = k * (normal).y; (newDir).z = k * (normal).z; } };
    vsub(newDir, currentRay.d, newDir);
@@ -1144,6 +1150,7 @@ __constant
    }
 
    float kk = (into ? 1 : -1) * (ddn * nnt + sqrt(cos2t));
+
    Vec nkk;
    vsmul(nkk, kk, normal);
    //{ float k = (kk); { (nkk).x = k * (normal).x; (nkk).y = k * (normal).y; (nkk).z = k * (normal).z; } };
@@ -1158,9 +1165,10 @@ __constant
    float a = nt - nc;
    float b = nt + nc;
    float R0 = a * a / (b * b);
-   float c = 1 - (into ? -ddn : vdot(transDir, normal)); //((transDir).x * (normal).x + (transDir).y * (normal).y + (transDir).z * (normal).z));
+   float c = 1 - (into ? -ddn : vdot(transDir, normal));
+   //((transDir).x * (normal).x + (transDir).y * (normal).y + (transDir).z * (normal).z));
 
-   float Re = R0 + (1 - R0) * c * c * c * c*c;
+   float Re = R0 + (1 - R0) * c * c * c * c * c;
    float Tr = 1.f - Re;
    float P = .25f + .5f * Re;
    float RP = Re / P;

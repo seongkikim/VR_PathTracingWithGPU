@@ -29,65 +29,46 @@ import javax.microedition.khronos.opengles.GL10;
  */
 
 public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Renderer {
-    private int mPositionHandle;
-    private int mTexCoordinateHandle;
-    private int mTextureUniformHandle;
-    private int mTextures[];
-
-    private int mProgramHandle;
-
-    private final int mBytesPerFloat = 4;
     /** Size of the position data in elements. */
-    private final int mPositionDataSize = 3;
-    private final int mTexCoordinateDataSize = 2;
+    private final int mBytesPerFloat = 4, mPositionDataSize = 3, mTexCoordinateDataSize = 2, texW = 640, texH = 480;
 
     /** Store our model data in a float buffer. */
-    private final FloatBuffer mScreenPosition;
-    private final FloatBuffer mTextureCoordinate;
-
-    int texW = 640;//canvas.getWidth();
-    int texH = 480;//canvas.getHeight();
-
-    private int inv = 0;
+    private final FloatBuffer mScreenPosition, mTextureCoordinate;
     private final boolean bFile = false;
 
-    /** The buffer holding the vertices */
-    private FloatBuffer vertexBuffer;
-    /** The buffer holding the texture coordinates */
-    private FloatBuffer textureBuffer;
+    private int mPositionHandle, mTexCoordinateHandle, mTextureUniformHandle, mProgramHandle, mTextures[], inv = 0;
 
-    Context context;
-    float camOrigTarg[];
+    private Context context;
+    private float camOrigTarg[], distLens;
 
     final float[] screenPosition =
-        {
-                -1.0f, 1.0f, 0.0f,
-                -1.0f,-1.0f, 0.0f,
-                1.0f, 1.0f, 0.0f,
-                -1.0f,-1.0f, 0.0f,
-                1.0f,-1.0f, 0.0f,
-                1.0f, 1.0f, 0.0f
-        };
-
+    {
+            -1.0f, 1.0f, 0.0f,
+            -1.0f,-1.0f, 0.0f,
+            1.0f, 1.0f, 0.0f,
+            -1.0f,-1.0f, 0.0f,
+            1.0f,-1.0f, 0.0f,
+            1.0f, 1.0f, 0.0f
+    };
 
     final float[] textureCoordinateData =
-        {
-                // Front face
-                0.0f, 0.0f,
-                0.0f, 1.0f,
-                1.0f, 0.0f,
-                0.0f, 1.0f,
-                1.0f, 1.0f,
-                1.0f, 0.0f
-        };
+    {
+            // Front face
+            0.0f, 0.0f,
+            0.0f, 1.0f,
+            1.0f, 0.0f,
+            0.0f, 1.0f,
+            1.0f, 1.0f,
+            1.0f, 0.0f
+    };
 
-    public native String stringFromJNI();
-    public native float[] initSmallPtGPU(int u, int f, String k, int w, int h, String s, String r, AssetManager asset);
+    public native float[] initSmallPtGPU(int u, int f, String k, int w, int h, String s, String r, AssetManager asset, boolean bvr);
     public native int[] updateRendering();
+    public native int[] updateRenderingVR(boolean bleft);
     public native void finishRendering();
-    public native void touchFunc(int deltax, int deltay);
-    //Java_gamemobile_kmu_ac_kr_vrapp3_VRApp3Renderer_touchFunc
+    public native void touchFunc(int deltax, int deltay, boolean bvr);
     public native void reinitCamera(float origx, float origy, float origz, float targx, float targy, float targz);
+    public native void reinitCameraVR(float origx, float origy, float origz, float targx, float targy, float targz);
 
     // Used to load the 'native-lib' library on application startup.
     static
@@ -95,8 +76,9 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
         System.loadLibrary("native-lib");
     }
 
-    public VRApp3Renderer(Context context) {
+    public VRApp3Renderer(Context context, float distLens) {
         this.context = context;
+        this.distLens = distLens;
 
         // Initialize the buffers.
         mScreenPosition = ByteBuffer.allocateDirect(screenPosition.length * mBytesPerFloat).order(ByteOrder.nativeOrder()).asFloatBuffer();
@@ -292,7 +274,9 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
         //GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST);
         //GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST);
 
-        camOrigTarg = initSmallPtGPU(1, 128, "kernels/rendering_kernel.cl", texW, texH, "scenes/obj-model.txt", Environment.getExternalStorageDirectory() + "/" + context.getPackageName(), context.getAssets());
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
+
+        camOrigTarg = initSmallPtGPU(1, 128, "kernels/rendering_kernel.cl", texW, texH, "scenes/obj-model.txt", Environment.getExternalStorageDirectory() + "/" + context.getPackageName(), context.getAssets(), true);
 
         Log.d("VRApp3Renderer", "End of onSurfaceCreated");
     }
@@ -371,23 +355,17 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
     }
 
     public void onDrawEye(Eye eye) {
-        Log.i("VRApp3Renderer", "Start of onDrawEye");
+        String strEyeType = new String();
 
-        float camOrg[] = new float[3];
-        float camTar[] = new float[3];
-
-        camOrg[0] = camOrigTarg[0];camOrg[1] = camOrigTarg[1];camOrg[2] = camOrigTarg[2];
-        camTar[0] = camOrigTarg[3];camTar[1] = camOrigTarg[4];camTar[2] = camOrigTarg[5];
-
+        boolean bleft = false;
         if (eye.getType() == Eye.Type.LEFT) {
-            camOrg[0] -= 1;
-        }
-        else if (eye.getType() == Eye.Type.RIGHT) {
-            camOrg[0] += 1;
+            strEyeType = "left";
+            bleft = true;
         }
 
-        reinitCamera(camOrg[0], camOrg[1], camOrg[2], camTar[0], camTar[1], camTar[2]);
-        int[] arr_pixels = updateRendering();
+        Log.i("VRApp3Renderer", "Start of onDrawEye for the " + strEyeType +" eye");
+
+        int[] arr_pixels = updateRenderingVR(bleft);
 
         if (arr_pixels == null)
         {
@@ -425,7 +403,7 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
         GLES20.glUseProgram(0);
 
-        Log.i("VRApp3Renderer", "End of onDrawEye, "+String.valueOf(inv));
+        Log.i("VRApp3Renderer", "End of onDrawEye for the " + strEyeType +" eye, " + String.valueOf(inv));
         inv++;
     }
 
@@ -437,7 +415,7 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
             GLES20.glViewport(0, 0, width, height);//specifies transformation from normalized device coordinates to window coordinates
         } catch (Exception e) {
             // TODO Auto-generated catch block
-            Log.d("Exception at the onSurfaceChanged",e.getMessage());
+            Log.d("VRApp3Renderer",e.getMessage());
         }
 
         Log.e("VRApp3Renderer", "End of onSurfaceChanged");
@@ -454,12 +432,14 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
     }
 
     public void onNewFrame(HeadTransform headTransform) {
-        float orig[] = new float[3];
-        float targ[] = new float[3];
+        //reinitCameraVR(camOrigTarg[0], camOrigTarg[1], camOrigTarg[2], camOrigTarg[3], camOrigTarg[4], camOrigTarg[5]);
 
-        headTransform.getHeadView(orig, 0);
-        headTransform.getForwardVector(targ, 0);
+        //float orig[] = new float[3];
+        //float targ[] = new float[3];
 
-        reinitCamera(orig[0], orig[1], orig[2], targ[0], targ[1], targ[2]);
+        //headTransform.getHeadView(orig, 0);
+        //headTransform.getForwardVector(targ, 0);
+
+        //reinitCamera(orig[0], orig[1], orig[2], targ[0], targ[1], targ[2]);
     }
 }

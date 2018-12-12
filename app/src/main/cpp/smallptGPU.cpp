@@ -57,7 +57,6 @@ bool Read(char *fileName, bool *walllight);
 #else 
 #include <android/asset_manager.h>
 #include <pthread.h>
-
 #endif
 
 #ifdef EXP_KERNEL
@@ -113,13 +112,13 @@ short knCnt;
 
 /* OpenCL variables */
 static cl_context context;
-static cl_mem colorBuffer, pixelBuffer, seedBuffer, shapeBuffer, cameraBuffer;
+static cl_mem colorBufferLeft, colorBufferRight, pixelBufferLeft, pixelBufferRight, seedBuffer, shapeBuffer, cameraBufferLeft, cameraBufferRight;
 static cl_command_queue commandQueue;
 static cl_program program;
 
-static Vec *colors;
+static Vec *colorsLeft, *colorsRight;
 static unsigned int *seeds;
-static short currentSample = 0;
+static short currentSampleLeft, currentSampleRight = 0;
 
 /* Options */
 int useGPU = 1;
@@ -128,7 +127,7 @@ int forceWorkSize = 0;
 unsigned int workGroupSize = 1;
 short shapeCnt = 0, lightCnt = 0;
 int pixelCount;
-Camera camera;
+Camera cameraLeft, cameraRight;
 Shape *shapes;
 
 #if (ACCELSTR == 1)
@@ -210,15 +209,22 @@ void FreeBuffers() {
 	{
 		clErrchk(clReleaseMemObject(seedBuffer));
 	}	
-	if (pixelBuffer)
+	if (pixelBufferRight)
 	{
-		clErrchk(clReleaseMemObject(pixelBuffer));
+		clErrchk(clReleaseMemObject(pixelBufferRight));
 	}
-	if (colorBuffer)
+    if (pixelBufferLeft)
+    {
+        clErrchk(clReleaseMemObject(pixelBufferLeft));
+    }
+	if (colorBufferRight)
 	{
-		clErrchk(clReleaseMemObject(colorBuffer));
+		clErrchk(clReleaseMemObject(colorBufferRight));
 	}
-
+    if (colorBufferLeft)
+    {
+        clErrchk(clReleaseMemObject(colorBufferLeft));
+    }
 #ifdef EXP_KERNEL
 	if (result) free(result);
 	if (terminated) free(terminated);
@@ -249,40 +255,54 @@ void FreeBuffers() {
 #endif
 #endif
 	if (seeds) free(seeds);
-	if (colors) free(colors);
-	if (pixels) free(pixels);
+	if (colorsRight) free(colorsRight);
+    if (colorsLeft) free(colorsLeft);
+    if (pixelsRight) free(pixelsRight);
+	if (pixelsLeft) free(pixelsLeft);
 }
 
 void AllocateBuffers() {
 	pixelCount = width * height;
 	int i;
     
-	colors = (Vec *)malloc(sizeof(Vec) * pixelCount);
-	seeds = (unsigned int *)malloc(sizeof(unsigned int) * pixelCount * 2);
+	colorsLeft = (Vec *)malloc(sizeof(Vec) * pixelCount);
+    colorsRight = (Vec *)malloc(sizeof(Vec) * pixelCount);
+
+    seeds = (unsigned int *)malloc(sizeof(unsigned int) * pixelCount * 2);
 
 	for (i = 0; i < pixelCount * 2; i++) {
 		seeds[i] = rand();
 		if (seeds[i] < 2) seeds[i] = 2;
 	}
 
-	pixels = (unsigned int *)malloc(sizeof(unsigned int) * pixelCount);
+	pixelsLeft = (unsigned int *)malloc(sizeof(unsigned int) * pixelCount);
+	pixelsRight = (unsigned int *)malloc(sizeof(unsigned int) * pixelCount);
 
 	cl_int status;
 	cl_uint sizeBytes = sizeof(Vec) * width * height;
 
-    colorBuffer = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeBytes, NULL, &status);
-	clErrchk(status);
-	
-	sizeBytes = sizeof(unsigned char[4]) * width * height;
-    pixelBuffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeBytes, NULL, &status);
+    colorBufferLeft = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeBytes, NULL, &status);
 	clErrchk(status);
 
-	sizeBytes = sizeof(unsigned int) * width * height * 2;
+    colorBufferRight = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeBytes, NULL, &status);
+    clErrchk(status);
+
+	sizeBytes = sizeof(unsigned char[4]) * width * height;
+    pixelBufferLeft = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeBytes, NULL, &status);
+	clErrchk(status);
+
+    pixelBufferRight = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeBytes, NULL, &status);
+    clErrchk(status);
+
+    sizeBytes = sizeof(unsigned int) * width * height * 2;
 	seedBuffer = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeBytes, NULL, &status);
 	clErrchk(status);
 
-	status = clEnqueueWriteBuffer(commandQueue, colorBuffer, CL_TRUE, 0, sizeBytes, colors, 0, NULL, NULL);
+	status = clEnqueueWriteBuffer(commandQueue, colorBufferLeft, CL_TRUE, 0, sizeBytes, colorsLeft, 0, NULL, NULL);
 	clErrchk(status);
+
+    status = clEnqueueWriteBuffer(commandQueue, colorBufferRight, CL_TRUE, 0, sizeBytes, colorsRight, 0, NULL, NULL);
+    clErrchk(status);
 
 	status = clEnqueueWriteBuffer(commandQueue, seedBuffer, CL_TRUE, 0, sizeBytes, seeds, 0, NULL, NULL);
 	clErrchk(status);
@@ -607,10 +627,15 @@ void SetUpOpenCL() {
 	knBuffer = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(int) * knCnt, NULL, &status);
 	clErrchk(status);
 #endif
-	cameraBuffer = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(Camera), NULL, &status);
+	cameraBufferLeft = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(Camera), NULL, &status);
 	clErrchk(status);
 
-	clErrchk(clEnqueueWriteBuffer(commandQueue, cameraBuffer, CL_TRUE, 0, sizeof(Camera), &camera, 0, NULL, NULL));
+	clErrchk(clEnqueueWriteBuffer(commandQueue, cameraBufferLeft, CL_TRUE, 0, sizeof(Camera), &cameraLeft, 0, NULL, NULL));
+
+	cameraBufferRight = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(Camera), NULL, &status);
+	clErrchk(status);
+
+	clErrchk(clEnqueueWriteBuffer(commandQueue, cameraBufferRight, CL_TRUE, 0, sizeof(Camera), &cameraRight, 0, NULL, NULL));
 
 	AllocateBuffers();
 
@@ -1310,13 +1335,13 @@ void *perform_work(void *arguments){
 
             Vec rdir;
             vinit(rdir,
-                  camera.x.s[0] * kcx + camera.y.s[0] * kcy + camera.dir.s[0],
-                  camera.x.s[1] * kcx + camera.y.s[1] * kcy + camera.dir.s[1],
-                  camera.x.s[2] * kcx + camera.y.s[2] * kcy + camera.dir.s[2]);
+                  cameraLeft.x.s[0] * kcx + cameraLeft.y.s[0] * kcy + cameraLeft.dir.s[0],
+				  cameraLeft.x.s[1] * kcx + cameraLeft.y.s[1] * kcy + cameraLeft.dir.s[1],
+				  cameraLeft.x.s[2] * kcx + cameraLeft.y.s[2] * kcy + cameraLeft.dir.s[2]);
 
             Vec rorig;
             vsmul(rorig, 0.1f, rdir);
-            vadd(rorig, rorig, camera.orig);
+            vadd(rorig, rorig, cameraLeft.orig);
 
             vnorm(rdir);
             rinit(ray[sgid], rorig, rdir);
@@ -1347,7 +1372,7 @@ unsigned int *DrawFrame() {
 	int len = pixelCount * sizeof(unsigned int), index = 0;
 	double startTime = WallClockTime(), setStartTime, kernelStartTime, readStartTime;
 	double setTotalTime = 0.0, kernelTotalTime = 0.0, readTotalTime = 0.0;
-	int startSampleCount = currentSample;
+	int startSampleCount = currentSampleLeft;
 
 #ifdef EXP_KERNEL
 	for (int i = 0; i < MAX_SPP; i++)
@@ -1441,10 +1466,10 @@ unsigned int *DrawFrame() {
 		setStartTime = WallClockTime();
 		clErrchk(clSetKernelArg(kernelFill, index++, sizeof(short), (void *)&width));
 		clErrchk(clSetKernelArg(kernelFill, index++, sizeof(short), (void *)&height));
-		clErrchk(clSetKernelArg(kernelFill, index++, sizeof(short), (void *)&currentSample));
-        clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *)&colorBuffer));
+		clErrchk(clSetKernelArg(kernelFill, index++, sizeof(short), (void *)&currentSampleLeft));
+        clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *)&colorBufferLeft));
         clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *)&resultBuffer));
-		clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *)&pixelBuffer));
+		clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *)&pixelBufferLeft));
 		setTotalTime += (WallClockTime() - setStartTime);
 
 		kernelStartTime = WallClockTime();
@@ -1457,7 +1482,7 @@ unsigned int *DrawFrame() {
 
 		/* Set kernel arguments */
 		setStartTime = WallClockTime();
-		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *)&cameraBuffer));
+		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *)&cameraBufferLeft));
         clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *)&seedBuffer));
         clErrchk(clSetKernelArg(kernelGen, index++, sizeof(short), (void *)&width));
         clErrchk(clSetKernelArg(kernelGen, index++, sizeof(short), (void *)&height));
@@ -1487,11 +1512,296 @@ unsigned int *DrawFrame() {
 	//--------------------------------------------------------------------------
 	/* Enqueue readBuffer */
     readStartTime = WallClockTime();
-    clErrchk(clEnqueueReadBuffer(commandQueue, pixelBuffer, CL_TRUE, 0, len, pixels, 0, NULL, NULL));
+    clErrchk(clEnqueueReadBuffer(commandQueue, pixelBufferLeft, CL_TRUE, 0, len, pixelsLeft, 0, NULL, NULL));
+	//clFinish(commandQueue);
+	readTotalTime += (WallClockTime() - readStartTime);
+
+    currentSampleLeft += MAX_SPP;
+#else
+	setStartTime = WallClockTime();
+
+	/* Set kernel arguments */
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(cl_mem), (void *)&colorBuffer));
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(cl_mem), (void *)&seedBuffer));
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(cl_mem), (void *) &cameraBuffer));
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(cl_mem), (void *)&shapeBuffer));
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(short), (void *) &shapeCnt));
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(short), (void *)&lightCnt));
+#if (ACCELSTR == 1)
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(cl_mem), (void *)&btnBuffer));
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(cl_mem), (void *)&btlBuffer));
+#elif (ACCELSTR == 2)
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(cl_mem), (void *)&kngBuffer));
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(short), (void *)&kngCnt));
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(cl_mem), (void *)&knBuffer));
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(short), (void *)&knCnt));
+#endif
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(short), (void *) &width));
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(short), (void *) &height));
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(short), (void *)&currentSample));
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(cl_mem), (void *) &pixelBuffer));
+#ifdef DEBUG_INTERSECTIONS
+    cl_int status;
+    int *debug1 = (int *)malloc(sizeof(int) * shapeCnt);
+    memset(debug1, 0, sizeof(int) * shapeCnt);
+
+    cl_mem debugBuffer1 = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(int) * shapeCnt, NULL, &status);
+	clErrchk(status);
+
+	clErrchk(clEnqueueWriteBuffer(commandQueue, debugBuffer1, CL_TRUE, 0, sizeof(int) * shapeCnt, debug1, 0, NULL, NULL));
+
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(cl_mem), (void *) &debugBuffer1));
+
+	float *debug2 = (float *)malloc(6 * sizeof(float) * shapeCnt);
+	memset(debug2, 0, sizeof(float) * shapeCnt);
+
+	cl_mem debugBuffer2 = clCreateBuffer(context, CL_MEM_READ_WRITE, 6 * sizeof(float) * shapeCnt, NULL, &status);
+	clErrchk(status);
+
+	clErrchk(clEnqueueWriteBuffer(commandQueue, debugBuffer2, CL_TRUE, 0, 6 * sizeof(float) * shapeCnt, debug2, 0, NULL, NULL));
+
+	clErrchk(clSetKernelArg(kernel, index++, sizeof(cl_mem), (void *) &debugBuffer2));
+#endif
+	setTotalTime += (WallClockTime() - setStartTime);
+
+	//--------------------------------------------------------------------------
+#ifdef CURRENT_SAMPLE
+	if (currentSample < 20) {
+#endif
+	kernelStartTime = WallClockTime();
+	ExecuteKernel();
+	//clFinish(commandQueue);
+	kernelTotalTime += (WallClockTime() - kernelStartTime);
+
+#ifdef CURRENT_SAMPLE
+    }
+    else {
+        /* After first 20 samples, continue to execute kernels for more and more time */
+        const float k = min(currentSample - 20, 100) / 100.f;
+        const float tresholdTime = 0.5f * k * 1000.0f;
+        for (;;) {
+            kernelStartTime = WallClockTime();
+            ExecuteKernel();
+            //clFinish(commandQueue);
+            kernelTotalTime += (WallClockTime() - kernelStartTime);
+
+            currentSample++;
+            const float elapsedTime = WallClockTime() - startTime;
+            if (elapsedTime > tresholdTime)
+                break;
+        }
+    }
+#endif
+    readStartTime = WallClockTime();
+    //--------------------------------------------------------------------------
+    /* Enqueue readBuffer */
+	clErrchk(clEnqueueReadBuffer(commandQueue, pixelBuffer, CL_TRUE, 0, len, pixels, 0, NULL, NULL));
+	//clFinish(commandQueue);
+	readTotalTime += (WallClockTime() - readStartTime);
+#ifdef DEBUG_INTERSECTIONS
+	clErrchk(clEnqueueReadBuffer(commandQueue, debugBuffer1, CL_TRUE, 0, sizeof(int) * shapeCnt, debug1, 0, NULL, NULL));
+	clErrchk(clEnqueueReadBuffer(commandQueue, debugBuffer2, CL_TRUE, 0, 6 * sizeof(float) * shapeCnt, debug2, 0, NULL, NULL));
+
+	char strLog[MAX_LOG];
+	strcpy(strLog, strResPath);
+	strcat(strLog, "/intersections.txt");
+
+    FILE *f = fopen(strLog, "wt"); // Write image to PPM file.
+	for(int i = 0; i < shapeCnt; i++) {
+		fprintf(f, "%d, ", debug1[i]);
+	}
+	fprintf(f, "\n");
+	for(int i = 0; i < 6 * shapeCnt; i++) {
+		fprintf(f, "%f, ", debug2[i]);
+	}
+	fclose(f);
+
+	clErrchk(clReleaseMemObject(debugBuffer2));
+    free(debug2);
+
+	clErrchk(clReleaseMemObject(debugBuffer1));
+	free(debug1);
+#endif
+    currentSample++;
+#endif
+
+	/*------------------------------------------------------------------------*/
+	const double elapsedTime = WallClockTime() - startTime;
+	const int samples = currentSampleLeft - startSampleCount;
+	const double sampleSec = samples * height * width / elapsedTime;
+	LOGI("Set time %.5f msec, Kernel time %.5f msec, Read time %.5f msec, Total time %.5f msec (pass %d)  Sample/sec  %.1fK\n",
+		setTotalTime, kernelTotalTime, readTotalTime, elapsedTime, currentSampleLeft, sampleSec / 1000.f);
+
+	return pixelsLeft;
+}
+
+unsigned int *DrawFrameVR(short bleft) {
+	int len = pixelCount * sizeof(unsigned int), index = 0;
+	double startTime = WallClockTime(), setStartTime, kernelStartTime, readStartTime;
+	double setTotalTime = 0.0, kernelTotalTime = 0.0, readTotalTime = 0.0;
+
+	int currentSample;
+
+	if (bleft) currentSample = currentSampleLeft;
+	else currentSample = currentSampleRight;
+
+	const int startSampleCount = currentSample;
+
+#ifdef EXP_KERNEL
+	for (int i = 0; i < MAX_SPP; i++)
+	{
+		int rayCnt = width * height;
+#if 1
+		index = 0;
+
+		/* Set kernel arguments */
+		setStartTime = WallClockTime();
+		if (bleft) { clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *)&cameraBufferLeft)); }
+		else clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *)&cameraBufferRight));
+
+		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *)&seedBuffer));
+		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(short), (void *)&width));
+		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(short), (void *)&height));
+		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *)&rayBuffer));
+		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *)&throughputBuffer));
+		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *)&specularBounceBuffer));
+		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *)&terminatedBuffer));
+		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *)&resultBuffer));
+		setTotalTime += (WallClockTime() - setStartTime);
+
+		kernelStartTime = WallClockTime();
+		ExecuteKernel(kernelGen, rayCnt);
+		//clFinish(commandQueue);
+		kernelTotalTime += (WallClockTime() - kernelStartTime);
+#else
+		ChangeRays();
+
+		//clErrchk(clEnqueueWriteBuffer(commandQueue, rayBuffer, CL_TRUE, 0, sizeof(Ray) *  width * height, ray, 0, NULL, NULL));
+		clErrchk(clEnqueueWriteBuffer(commandQueue, throughputBuffer, CL_TRUE, 0, sizeof(Vec) *  width * height, throughput, 0, NULL, NULL));
+		clErrchk(clEnqueueWriteBuffer(commandQueue, specularBounceBuffer, CL_TRUE, 0, sizeof(char) *  width * height, specularBounce, 0, NULL, NULL));
+		clErrchk(clEnqueueWriteBuffer(commandQueue, terminatedBuffer, CL_TRUE, 0, sizeof(char) *  width * height, terminated, 0, NULL, NULL));
+		clErrchk(clEnqueueWriteBuffer(commandQueue, resultBuffer, CL_TRUE, 0, sizeof(Result) *  width * height, result, 0, NULL, NULL));
+        clErrchk(clEnqueueWriteBuffer(commandQueue, rayBuffer, CL_TRUE, 0, sizeof(Ray) *  width * height, ray, 0, NULL, NULL));
+#endif
+		for (int j = 0; j < MAX_DEPTH; j++)
+		{
+			index = 0;
+
+			setStartTime = WallClockTime();
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *)&shapeBuffer));
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *)&shapeCnt));
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *)&lightCnt));
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *)&width));
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *)&height));
+#if (ACCELSTR == 1)
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *)&btnBuffer));
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *)&btlBuffer));
+#elif (ACCELSTR == 2)
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *)&kngBuffer));
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *)&kngCnt));
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *)&knBuffer));
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *)&knCnt));
+#endif
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *)&rayBuffer));
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *)&seedBuffer));
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *)&throughputBuffer));
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *)&specularBounceBuffer));
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *)&terminatedBuffer));
+			clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *)&resultBuffer));
+			setTotalTime += (WallClockTime() - setStartTime);
+
+			kernelStartTime = WallClockTime();
+			ExecuteKernel(kernelRadiance, rayCnt);
+			//clFinish(commandQueue);
+			kernelTotalTime += (WallClockTime() - kernelStartTime);
+#if 0
+			//clErrchk(clEnqueueReadBuffer(commandQueue, rayBuffer, CL_TRUE, 0, sizeof(Ray) *  rayCnt, ray, 0, NULL, NULL));
+            //clErrchk(clEnqueueReadBuffer(commandQueue, seedBuffer, CL_TRUE, 0, sizeof(unsigned int) *  rayCnt * 2, seeds, 0, NULL, NULL));
+            //clErrchk(clEnqueueReadBuffer(commandQueue, throughputBuffer, CL_TRUE, 0, sizeof(Vec) *  rayCnt, throughput, 0, NULL, NULL));
+            //clErrchk(clEnqueueReadBuffer(commandQueue, specularBounceBuffer, CL_TRUE, 0, sizeof(char) *  rayCnt, specularBounce, 0, NULL, NULL));
+            clErrchk(clEnqueueReadBuffer(commandQueue, terminatedBuffer, CL_TRUE, 0, sizeof(char) *  rayCnt, terminated, 0, NULL, NULL));
+            //clErrchk(clEnqueueReadBuffer(commandQueue, resultBuffer, CL_TRUE, 0, sizeof(Result) *  width * height, result, 0, NULL, NULL));
+
+            int rc = 0, lastSwapped = rayCnt - 1;
+
+            for(int k = 0; k < rayCnt; k++) {
+                if (terminated[k] == 1)
+                {
+                    for(int l = lastSwapped; l > k; l--)
+                    {
+                        if (terminated[l] == 0) {
+                            Ray tRay = ray[k]; ray[k] = ray[l]; ray[l] = tRay;
+
+                            unsigned int tSeeds1 = seeds[2 * k]; seeds[2 * k] = seeds[2 * l]; seeds[2 * l] = tSeeds1;
+                            unsigned int tSeeds2 = seeds[2 * k + 1]; seeds[2 * k + 1] = seeds[2 * l + 1]; seeds[2 * l + 1] = tSeeds2;
+
+                            Vec tThroughput = throughput[k]; throughput[k] = throughput[l]; throughput[l] = tThroughput;
+                            char tSB = specularBounce[k]; specularBounce[k] = specularBounce[l]; specularBounce[l] = tSB;
+                            char tT = terminated[k]; terminated[k] = terminated[l]; terminated[l] = tT;
+                            //result[k] = result[l];
+
+                            lastSwapped = l - 1;
+                            break;
+                        }
+                    }
+                    rc++;
+                }
+            }
+
+            //rayCnt = rc;
+            if (rc == rayCnt)
+            {
+                LOGI("Loop finished\n");
+                break;
+            }
+			//LOGI("Ray Count: %d", rc);
+
+            //clErrchk(clEnqueueWriteBuffer(commandQueue, rayBuffer, CL_TRUE, 0, sizeof(Ray) *  rayCnt, ray, 0, NULL, NULL));
+            //clErrchk(clEnqueueWriteBuffer(commandQueue, seedBuffer, CL_TRUE, 0, sizeof(unsigned int) *  rayCnt * 2, seeds, 0, NULL, NULL));
+            //clErrchk(clEnqueueWriteBuffer(commandQueue, throughputBuffer, CL_TRUE, 0, sizeof(Vec) *  rayCnt, throughput, 0, NULL, NULL));
+            //clErrchk(clEnqueueWriteBuffer(commandQueue, specularBounceBuffer, CL_TRUE, 0, sizeof(char) *  rayCnt, specularBounce, 0, NULL, NULL));
+            //clErrchk(clEnqueueWriteBuffer(commandQueue, terminatedBuffer, CL_TRUE, 0, sizeof(char) *  rayCnt, terminated, 0, NULL, NULL));
+            //clErrchk(clEnqueueWriteBuffer(commandQueue, resultBuffer, CL_TRUE, 0, sizeof(Result) *  width * height, result, 0, NULL, NULL));
+#endif
+		}
+
+		index = 0;
+
+		setStartTime = WallClockTime();
+		clErrchk(clSetKernelArg(kernelFill, index++, sizeof(short), (void *)&width));
+		clErrchk(clSetKernelArg(kernelFill, index++, sizeof(short), (void *)&height));
+		clErrchk(clSetKernelArg(kernelFill, index++, sizeof(short), (void *)&currentSample));
+
+		if (bleft) { clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *)&colorBufferLeft)); }
+		else clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *)&colorBufferRight));
+
+		clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *)&resultBuffer));
+
+		if (bleft) { clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *)&pixelBufferLeft)); }
+		else clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *)&pixelBufferRight));
+
+		setTotalTime += (WallClockTime() - setStartTime);
+
+		kernelStartTime = WallClockTime();
+		ExecuteKernel(kernelFill, width * height);
+		//clFinish(commandQueue);
+		kernelTotalTime += (WallClockTime() - kernelStartTime);
+	}
+
+	//--------------------------------------------------------------------------
+	/* Enqueue readBuffer */
+	readStartTime = WallClockTime();
+
+	if (bleft) { clErrchk(clEnqueueReadBuffer(commandQueue, pixelBufferLeft, CL_TRUE, 0, len, pixelsLeft, 0, NULL, NULL)); }
+	else clErrchk(clEnqueueReadBuffer(commandQueue, pixelBufferRight, CL_TRUE, 0, len, pixelsRight, 0, NULL, NULL));
+
 	//clFinish(commandQueue);
 	readTotalTime += (WallClockTime() - readStartTime);
 
     currentSample += MAX_SPP;
+
+	if (bleft) currentSampleLeft = currentSample;
+	else currentSampleRight = currentSample;
 #else
 	setStartTime = WallClockTime();
 
@@ -1603,16 +1913,19 @@ unsigned int *DrawFrame() {
 	/*------------------------------------------------------------------------*/
 	const double elapsedTime = WallClockTime() - startTime;
 	const int samples = currentSample - startSampleCount;
-	const double sampleSec = samples * height * width / elapsedTime;
-	LOGI("Set time %.5f msec, Kernel time %.5f msec, Read time %.5f msec, Total time %.5f msec (pass %d)  Sample/sec  %.1fK\n",
-		setTotalTime, kernelTotalTime, readTotalTime, elapsedTime, currentSample, sampleSec / 1000.f);
 
-	return pixels;
+	const double sampleSec = samples * height * width / elapsedTime;
+	LOGI("Set time %.5f msec, Kernel time %.5f msec, Read time %.5f msec, Total time %.5f msec (pass %d)  Sample/sec  %.1fK, Left %d\n",
+		 setTotalTime, kernelTotalTime, readTotalTime, elapsedTime, currentSample, sampleSec / 1000.f, bleft);
+
+	if (bleft) return pixelsLeft;
+	else return pixelsRight;
 }
 #endif
 
 void ReInitScene() {
-    currentSample = 0;
+    currentSampleLeft = 0;
+	currentSampleRight = 0;
 
     // Redownload the scene
 	clErrchk(clEnqueueWriteBuffer(commandQueue, shapeBuffer, CL_TRUE, 0, sizeof(Shape) * shapeCnt, shapes, 0, NULL, NULL));
@@ -1622,13 +1935,13 @@ void ReInit(const int reallocBuffers) {
     // Check if I have to reallocate buffers
     if (reallocBuffers) {
         FreeBuffers();
-        UpdateCamera();
+        UpdateCamera(false);
         AllocateBuffers();
     } else {
-        UpdateCamera();
+        UpdateCamera(false);
 	}
 
-	clErrchk(clEnqueueWriteBuffer(commandQueue, cameraBuffer, CL_TRUE, 0, sizeof(Camera), &camera, 0, NULL, NULL));
+	clErrchk(clEnqueueWriteBuffer(commandQueue, cameraBufferLeft, CL_TRUE, 0, sizeof(Camera), &cameraLeft, 0, NULL, NULL));
 #if (ACCELSTR == 1)
 	clErrchk(clEnqueueWriteBuffer(commandQueue, btnBuffer, CL_TRUE, 0, sizeof(BVHNodeGPU) * (shapeCnt - 1), btn, 0, NULL, NULL));
 	clErrchk(clEnqueueWriteBuffer(commandQueue, btlBuffer, CL_TRUE, 0, sizeof(BVHNodeGPU) * (shapeCnt), btl, 0, NULL, NULL));
@@ -1637,7 +1950,8 @@ void ReInit(const int reallocBuffers) {
 	clErrchk(clEnqueueWriteBuffer(commandQueue, knBuffer, CL_TRUE, 0, sizeof(int) * (knCnt), pknbuf, 0, NULL, NULL));
 #endif
 
-    currentSample = 0;
+    currentSampleLeft = 0;
+	currentSampleRight = 0;
 
 #ifdef EXP_KERNEL
 #ifdef CPU_PARTRENDERING
@@ -1688,7 +2002,7 @@ void ReInit(const int reallocBuffers) {
 	int index = 0;
 
 	/* Set kernel arguments */
-	clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *)&cameraBuffer));
+	clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *)&cameraBufferLeft));
 	clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *)&seedBuffer));
 	clErrchk(clSetKernelArg(kernelGen, index++, sizeof(short), (void *)&width));
 	clErrchk(clSetKernelArg(kernelGen, index++, sizeof(short), (void *)&height));
@@ -1710,6 +2024,30 @@ void ReInit(const int reallocBuffers) {
 	clErrchk(clEnqueueReadBuffer(commandQueue, resultBuffer, CL_TRUE, 0, sizeof(Result) *  width * height, result, 0, NULL, NULL));
 #endif
 #endif
+}
+
+void ReInitVR(const int reallocBuffers) {
+	// Check if I have to reallocate buffers
+	if (reallocBuffers) {
+		FreeBuffers();
+		UpdateCamera(true);
+		AllocateBuffers();
+	} else {
+		UpdateCamera(true);
+	}
+
+	clErrchk(clEnqueueWriteBuffer(commandQueue, cameraBufferLeft, CL_TRUE, 0, sizeof(Camera), &cameraLeft, 0, NULL, NULL));
+	clErrchk(clEnqueueWriteBuffer(commandQueue, cameraBufferRight, CL_TRUE, 0, sizeof(Camera), &cameraRight, 0, NULL, NULL));
+#if (ACCELSTR == 1)
+	clErrchk(clEnqueueWriteBuffer(commandQueue, btnBuffer, CL_TRUE, 0, sizeof(BVHNodeGPU) * (shapeCnt - 1), btn, 0, NULL, NULL));
+	clErrchk(clEnqueueWriteBuffer(commandQueue, btlBuffer, CL_TRUE, 0, sizeof(BVHNodeGPU) * (shapeCnt), btl, 0, NULL, NULL));
+#elif (ACCELSTR == 2)
+	clErrchk(clEnqueueWriteBuffer(commandQueue, kngBuffer, CL_TRUE, 0, sizeof(KDNodeGPU) * (kngCnt), pkngbuf, 0, NULL, NULL));
+	clErrchk(clEnqueueWriteBuffer(commandQueue, knBuffer, CL_TRUE, 0, sizeof(int) * (knCnt), pknbuf, 0, NULL, NULL));
+#endif
+
+	currentSampleLeft = 0;
+	currentSampleRight = 0;
 }
 
 #ifdef WIN32

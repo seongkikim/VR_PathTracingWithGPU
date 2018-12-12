@@ -23,6 +23,7 @@
 #endif
 
 #define MAX_FN 255
+#define DIFF_LEFTRIGHTEYE 20.0f
 //#define CURRENT_SAMPLE
 
 extern int useGPU;
@@ -30,7 +31,7 @@ extern int forceWorkSize;
 extern char kernelFileName[];
 extern char bvhFileName[];
 extern int pixelCount;
-extern Camera camera;
+extern Camera cameraLeft, cameraRight;
 #ifdef __ANDROID__
 extern AAssetManager *mgr;
 extern char *strResPath;
@@ -41,5 +42,6 @@ extern void SetUpOpenCL();
 extern void BuildBVH();
 extern void BuildKDtree();
 extern unsigned int *DrawFrame();
+extern unsigned int *DrawFrameVR(short bleft);
 
 #endif //PTGPU_NATIVE_LIB_H

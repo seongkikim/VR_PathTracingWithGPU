@@ -80,7 +80,7 @@ extern void ReInitScene();
 extern void UpdateRendering();
 extern void UpdateCamera();
 
-extern Camera camera;
+extern Camera cameraLeft, cameraRight;
 extern Shape *shapes;
 extern unsigned int shapeCnt;
 extern unsigned int lightCnt;
@@ -89,7 +89,7 @@ int amiSmallptCPU;
 
 short width = 640;
 short height = 480;
-unsigned int *pixels;
+unsigned int *pixelsLeft, *pixelsRight;
 char captionBuffer[256];
 
 Material *materials;
@@ -139,7 +139,7 @@ const char* ReadFile(size_t* fileLength, const char* fileName) {
 	return contents;
 }
 
-bool ReadTxt(char *fileName) {
+bool ReadTxt(char *fileName, bool bvr) {
 	int objectCount = 0;
 	ObjectTemp *objects;
 
@@ -165,13 +165,20 @@ bool ReadTxt(char *fileName) {
 
 	// part 2: camera configuration: camera eye.x eye.y eye.z  target.x target.y target.z
 	c = fscanf(f, "camera %f %f %f  %f %f %f\n",
-		&camera.orig.s[0], &camera.orig.s[1], &camera.orig.s[2],
-		&camera.target.s[0], &camera.target.s[1], &camera.target.s[2]);
+		&cameraLeft.orig.s[0], &cameraLeft.orig.s[1], &cameraLeft.orig.s[2],
+		&cameraLeft.target.s[0], &cameraLeft.target.s[1], &cameraLeft.target.s[2]);
 
-	camera.pitch = 0;
-	camera.yaw = 0;
-	camera.width = width;
-	camera.height = height;
+	cameraLeft.pitch = 0;
+	cameraLeft.yaw = 0;
+	cameraLeft.width = width;
+	cameraLeft.height = height;
+
+	if (bvr) {
+		cameraRight = cameraLeft;
+
+		cameraLeft.orig.s[0] -= DIFF_LEFTRIGHTEYE;
+		cameraRight.orig.s[0] += 2 * DIFF_LEFTRIGHTEYE;
+	}
 
 	if (c != 6) {
 		LOGE("Failed to read 6 camera parameters: %d\n", c);
@@ -512,7 +519,7 @@ bool ReadScene(const char *fileName) {
 	}
 
 	/* Read the camera position */
-	int c = fscanf(f,"camera %f %f %f %f %f %f\n", &camera.orig.s[0], &camera.orig.s[1], &camera.orig.s[2], &camera.target.s[0], &camera.target.s[1], &camera.target.s[2]);
+	int c = fscanf(f,"camera %f %f %f %f %f %f\n", &cameraLeft.orig.s[0], &cameraLeft.orig.s[1], &cameraLeft.orig.s[2], &cameraLeft.target.s[0], &cameraLeft.target.s[1], &cameraLeft.target.s[2]);
 	if (c != 6) {
         fclose(f);
 		LOGE("Failed to read 6 camera parameters: %d\n", c);
@@ -611,8 +618,8 @@ bool ReadPly(char *fileName) {
 	//int num_obj_info;
 	//char **obj_info;
 
-	camera.orig.s[0] = 0.0f, camera.orig.s[1] = 0.0f, camera.orig.s[2] = 75.0f,
-	camera.target.s[0] = 0.0f, camera.target.s[1] = 0.0f, camera.target.s[2] = 0.0f;
+	cameraLeft.orig.s[0] = 0.0f, cameraLeft.orig.s[1] = 0.0f, cameraLeft.orig.s[2] = 75.0f,
+	cameraLeft.target.s[0] = 0.0f, cameraLeft.target.s[1] = 0.0f, cameraLeft.target.s[2] = 0.0f;
 
 	/* open a PLY file for reading */
 	ply = ply_open_for_reading(fileName, &nelems, &elist, &file_type, &version);
@@ -712,7 +719,7 @@ char* GetFileExt(char * file_name)
 	return file_ext;
 }
 
-bool Read(char *fileName, bool *walllight) {
+bool Read(char *fileName, bool *walllight, bool bvr) {
 	bool ret = true;
 	char *fileExt = GetFileExt(fileName);
 
@@ -720,52 +727,81 @@ bool Read(char *fileName, bool *walllight) {
 	else if (!strcmp(fileExt, "ply")) ret = ReadPly(fileName);
 	else if (!strcmp(fileExt, "txt"))
 	{
-		ret = ReadTxt(fileName);
+		ret = ReadTxt(fileName, bvr);
 		*walllight = false;
 	}
 
 	return ret;
 }
 
-void UpdateCamera() {
-	float xDirection = sin(camera.yaw) * cos(camera.pitch);
-	float yDirection = sin(camera.pitch);
-	float zDirection = cos(camera.yaw) * cos(camera.pitch);
+void UpdateCamera(bool bvr) {
+	float xDirection = sin(cameraLeft.yaw) * cos(cameraLeft.pitch);
+	float yDirection = sin(cameraLeft.pitch);
+	float zDirection = cos(cameraLeft.yaw) * cos(cameraLeft.pitch);
 
 	const Vec directionToCamera = { xDirection, yDirection, zDirection };
-	vsmul(camera.dir, -1, directionToCamera);
-	vnorm(camera.dir);
+	vsmul(cameraLeft.dir, -1, directionToCamera);
+	vnorm(cameraLeft.dir);
 
 	const Vec up = { 0.f, 1.f, 0.f };
 	const float fov = (FLOAT_PI / 180.f) * HARD_CODED_CAMERA_FOV;
 
 	// axis x is orthogonal to the camera direction and up
-	vxcross(camera.x, camera.dir, up);
-	vnorm(camera.x);
+	vxcross(cameraLeft.x, cameraLeft.dir, up);
+	vnorm(cameraLeft.x);
 	// multiplies x axis by aspectRatio * fov
-	vsmul(camera.x, camera.width * fov / camera.height, camera.x);
+	vsmul(cameraLeft.x, cameraLeft.width * fov / cameraLeft.height, cameraLeft.x);
 
 	// axis y is orthogonal to x and camera direction
-	vxcross(camera.y, camera.x, camera.dir);
-	vnorm(camera.y);
+	vxcross(cameraLeft.y, cameraLeft.x, cameraLeft.dir);
+	vnorm(cameraLeft.y);
 
 	// multiplies y axis by the fov
-	vsmul(camera.y, fov, camera.y);
+	vsmul(cameraLeft.y, fov, cameraLeft.y);
+
+	if (bvr)
+	{
+		float xDirection = sin(cameraRight.yaw) * cos(cameraRight.pitch);
+		float yDirection = sin(cameraRight.pitch);
+		float zDirection = cos(cameraRight.yaw) * cos(cameraRight.pitch);
+
+		const Vec directionToCamera = { xDirection, yDirection, zDirection };
+		vsmul(cameraRight.dir, -1, directionToCamera);
+		vnorm(cameraRight.dir);
+
+		const Vec up = { 0.f, 1.f, 0.f };
+		const float fov = (FLOAT_PI / 180.f) * HARD_CODED_CAMERA_FOV;
+
+		// axis x is orthogonal to the camera direction and up
+		vxcross(cameraRight.x, cameraRight.dir, up);
+		vnorm(cameraRight.x);
+		// multiplies x axis by aspectRatio * fov
+		vsmul(cameraRight.x, cameraRight.width * fov / cameraRight.height, cameraRight.x);
+
+		// axis y is orthogonal to x and camera direction
+		vxcross(cameraRight.y, cameraRight.x, cameraRight.dir);
+		vnorm(cameraRight.y);
+
+		// multiplies y axis by the fov
+		vsmul(cameraRight.y, fov, cameraRight.y);
+	}
 }
 
 #ifdef __ANDROID__
 #define TWO_PI 6.28318530717958647693f
 #define PI_OVER_TWO 1.57079632679489661923f
 
-void touchFunc(int deltax, int deltay) {
+void touchFunc(int deltax, int deltay, bool bvr) {
 	if (deltax != 0 || deltay != 0) {
-		// rotate the camera using pitch (nodding movement) and yaw (nonono movement)
-		camera.yaw += deltax * 0.0001;
-		camera.yaw = camera.yaw - TWO_PI * floor(camera.yaw / TWO_PI);
-		camera.pitch += -deltay * 0.0001;
-		camera.pitch = clamp(camera.pitch, -PI_OVER_TWO, PI_OVER_TWO);
+		if (!bvr) {
+			// rotate the camera using pitch (nodding movement) and yaw (nonono movement)
+			cameraLeft.yaw += deltax * 0.0001;
+			cameraLeft.yaw = cameraLeft.yaw - TWO_PI * floor(cameraLeft.yaw / TWO_PI);
+			cameraLeft.pitch += -deltay * 0.0001;
+			cameraLeft.pitch = clamp(cameraLeft.pitch, -PI_OVER_TWO, PI_OVER_TWO);
 
-		ReInit(0);
+			ReInit(0);
+		}
 	}
 }
 #endif

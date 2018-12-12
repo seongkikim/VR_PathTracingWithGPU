@@ -5,6 +5,7 @@ import android.view.MotionEvent;
 import android.view.View;
 
 import com.google.vr.sdk.base.GvrView;
+import com.google.vr.sdk.base.GvrViewerParams;
 
 import static android.view.MotionEvent.ACTION_DOWN;
 import static android.view.MotionEvent.ACTION_UP;
@@ -15,6 +16,7 @@ import static android.view.MotionEvent.ACTION_UP;
 public class VRApp3View extends GvrView{
     int touchX, touchY;
     private VRApp3Renderer mRenderer;
+    private float distLens;
 
     public VRApp3View(Context context) {
         super(context);
@@ -22,7 +24,8 @@ public class VRApp3View extends GvrView{
         // Create an OpenGL ES 1.0 context.
         setEGLContextClientVersion(2);
 
-        mRenderer = new VRApp3Renderer(context);
+        distLens = getGvrViewerParams().getInterLensDistance();
+        mRenderer = new VRApp3Renderer(context, distLens);
 
         setRenderer(mRenderer);
         setTransitionViewEnabled(false);
