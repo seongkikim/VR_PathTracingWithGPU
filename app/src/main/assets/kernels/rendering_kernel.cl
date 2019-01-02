@@ -612,7 +612,7 @@ __constant
 #endif
         &shadowRay, len - EPSILON))) {
     Vec c; vassign(c, light->e); //{ (c).x = (light->e).x; (c).y = (light->e).y; (c).z = (light->e).z; };
-    const float s = light->area * wi * wo / (len *len);
+    const float s = light->area * wi * wo / (len * len);
     vsmul(c, s, c);
 	//{ float k = (s); { (c).x = k * (c).x; (c).y = k * (c).y; (c).z = k * (c).z; } };
     vadd(*result, *result, c);

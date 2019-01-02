@@ -1,6 +1,7 @@
 
 #include "clheader.h"
- 
+#include "/sdcard/gamemobile.kmu.ac.kr.vrapp3/include/geom.h"
+
 inline float GetRandom(__global unsigned int *seed0, __global unsigned int *seed1) {
  *seed0 = 36969 * ((*seed0) & 65535) + ((*seed0) >> 16);
  *seed1 = 18000 * ((*seed1) & 65535) + ((*seed1) >> 16);
@@ -122,6 +123,19 @@ __constant
 	if (t > EPSILON) return t;
 #endif
 	return 0.0f;
+}
+
+bool RectangleIntersect(const Vec n, const Vec p0, const Vec l0, const Vec l, float *t)
+{
+    // assuming vectors are all normalized
+    float denom = vdot(n, l);
+    if (denom > 1e-6) {
+        Vec p0l0 = p0 - l0;
+        *t = vdot(p0l0, n) / denom;
+        return (*t >= 0);
+    }
+
+    return false;
 }
 
 void UniformSampleSphere(const float u1, const float u2, Vec *v) {
@@ -636,6 +650,7 @@ __constant
  const Shape *shapes,
  const short shapeCnt,
  const short lightCnt,
+ const short width, const short height, const short depth,
 #if (ACCELSTR == 1)
 __constant
 
@@ -656,7 +671,7 @@ __constant
  Ray *currentRay,
  __global unsigned int *seed0, __global unsigned int *seed1, 
  __global Vec *throughput, __global char *specularBounce, __global char *terminated,
- __global Vec *result
+ __global Vec *result, __global FirstHitInfo *fhi
 #ifdef DEBUG_INTERSECTIONS
  , __global int *debug1,
  __global float *debug2
@@ -667,9 +682,9 @@ __constant
 
   if (!Intersect(shapes, shapeCnt, 
 #if (ACCELSTR == 1)
-  btn, btl,   
+  btn, btl,
 #elif (ACCELSTR == 2)
-  kng, kngCnt, kn, knCnt, 
+  kng, kngCnt, kn, knCnt,
 #endif
   currentRay, &t, &id
 #ifdef DEBUG_INTERSECTIONS
@@ -677,7 +692,8 @@ __constant
 #endif
   )) {
    *terminated = 1;
-   
+   if (depth == 0) fhi->idxShape = -1; // In the primary ray case,
+
    return;
   }
 
@@ -686,6 +702,25 @@ __constant
   //{ float k = (t); hitPoint.x = t * (currentRay->d).x; hitPoint.y = t * (currentRay->d).y; hitPoint.z = t * (currentRay->d).z; }
   vadd(hitPoint, currentRay->o, hitPoint);
   //{ hitPoint.x = (currentRay->o).x + (hitPoint).x; hitPoint.y = (currentRay->o).y + (hitPoint).y; hitPoint.z = (currentRay->o).z + (hitPoint).z; } 
+
+  // In the primary ray case, the current color is initialized to the last color...
+  if (depth == 0) {
+    /*
+    for(int i = 1; i <= height; i++) {
+        for(int j = 0; j < width; j++) {
+            int index = (i - 1) * width + j;
+            if (fhi[index].firstHitPoint.x == hitPoint.x && fhi[index].firstHitPoint.y == hitPoint.y && fhi[index].firstHitPoint.z == hitPoint.z) {
+                *result = fhi[index].currentColor;
+
+                i = height;
+                break;
+            }
+        }
+    }
+    */
+    fhi->firstHitPoint = hitPoint;
+    fhi->idxShape = id;
+  }
 
   Vec normal, col;
   enum Refl refl;
@@ -700,7 +735,7 @@ __constant
   else if (s.type == TRIANGLE)
   {
 	Vec v0 = s.t.p1, v1 = s.t.p2, v2 = s.t.p3, e1, e2;
-		
+
 	vsub(e1, v1, v0);
 	//{ e1.x = (v1).x - (v0).x; e1.y = (v1).y - (v0).y; e1.z = (v1).z - (v0).z; }
 	vsub(e2, v2, v0);
@@ -713,7 +748,7 @@ __constant
 
   refl = s.refl;
   col = s.c;
-	
+
   vnorm(normal);
   //{ float l = 1.f / sqrt(((normal).x * (normal).x + (normal).y * (normal).y + (normal).z * (normal).z)); float k = (l); normal.x = k * (normal).x; normal.y = k * (normal).y; normal.z = k * (normal).z; }
   const float dp = vdot(normal, currentRay->d);
@@ -721,17 +756,17 @@ __constant
 
   Vec nl;
   const float invSignDP = -1.f * sign(dp);
-  
+
   vsmul(nl, invSignDP, normal); 
   //{ float k = (invSignDP); { (nl).x = k * (normal).x; (nl).y = k * (normal).y; (nl).z = k * (normal).z; } };
 
-   Vec eCol; 
+  Vec eCol;
 
-   eCol = s.e; //vassign(eCol, s.e);
-   //{ (eCol).x = (s.e).x; (eCol).y = (s.e).y; (eCol).z = (s.e).z; };
+  eCol = s.e; //vassign(eCol, s.e);
+  //{ (eCol).x = (s.e).x; (eCol).y = (s.e).y; (eCol).z = (s.e).z; };
 
-   if (!viszero(eCol)) {
-   //if (!(((eCol).x == 0.f) && ((eCol).x == 0.f) && ((eCol).z == 0.f))) {
+  if (!viszero(eCol)) {
+  //if (!(((eCol).x == 0.f) && ((eCol).x == 0.f) && ((eCol).z == 0.f))) {
    if (*specularBounce) {
     vsmul(eCol, fabs(dp), eCol);
     //{ float k = (fabs(dp)); { (eCol).x = k * (eCol).x; (eCol).y = k * (eCol).y; (eCol).z = k * (eCol).z; } };
@@ -742,9 +777,8 @@ __constant
    }
 
    *terminated = 1;
-   
    return;
-   }
+  }
 
   if (refl == DIFF) {
    *specularBounce = 0;
@@ -759,6 +793,7 @@ __constant
     kng, kngCnt, kn, knCnt,
 #endif
     seed0, seed1, &hitPoint, &nl, &Ld);
+
    vmul(Ld, *throughput, Ld);
    //{ (Ld).x = (throughput)->x * (Ld).x; (Ld).y = (throughput)->y * (Ld).y; (Ld).z = (throughput)->z * (Ld).z; };
    vadd(*result, *result, Ld);
@@ -769,7 +804,7 @@ __constant
    float r2s = sqrt(r2);
 
    Vec w;
-   w = nl; //vassign(w, nl)
+   vassign(w, nl)
    // { (w).x = (nl).x; (w).y = (nl).y; (w).z = (nl).z; };
 
    Vec u, a;
@@ -866,7 +901,7 @@ __constant
    float c = 1 - (into ? -ddn : vdot(transDir, normal));
    //((transDir).x * (normal).x + (transDir).y * (normal).y + (transDir).z * (normal).z));
 
-   float Re = R0 + (1 - R0) * c * c * c * c*c;
+   float Re = R0 + (1 - R0) * c * c * c * c * c;
    float Tr = 1.f - Re;
    float P = .25f + .5f * Re;
    float RP = Re / P;
@@ -906,6 +941,7 @@ __constant
  const short shapeCnt,
  const short lightCnt,
  const short width, const short height,
+ const short depth,
 #if (ACCELSTR == 1)
 __constant
 
@@ -923,7 +959,7 @@ __constant
  int *kn, 
  short knCnt, 
 #endif  
- __global Ray *rays, __global unsigned int *seedsInput, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results
+ __global Ray *rays, __global unsigned int *seedsInput, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results, __global FirstHitInfo *fhi
 #ifdef DEBUG_INTERSECTIONS
  , __global int *debug1,
  __global float *debug2
@@ -935,25 +971,30 @@ __constant
  const int y = results[gid].y;//gid / width; //
 
  const int sgid2 = gid << 1;
-  
+
  if (terminated[gid] != 1)
  {
 	Ray aray = rays[gid];
-	
-	RadianceOnePathTracing(shapes, shapeCnt, lightCnt, 
+
+	if (depth == 0) {
+        fhi[gid].x = x;
+        fhi[gid].y = y;
+	}
+
+	RadianceOnePathTracing(shapes, shapeCnt, lightCnt, width, height, depth,
 #if (ACCELSTR == 1)
 			btn, btl, 
 #elif (ACCELSTR == 2)
 			kng, kngCnt, kn, knCnt, 
 #endif
-			&aray, &seedsInput[sgid2], &seedsInput[sgid2+1], &throughput[gid], &specularBounce[gid], &terminated[gid], &results[gid].p
+			&aray, &seedsInput[sgid2], &seedsInput[sgid2+1], &throughput[gid], &specularBounce[gid], &terminated[gid], &results[gid].p, &fhi[gid]
 #ifdef DEBUG_INTERSECTIONS
 		, debug1, debug2
 #endif
-	);	
-	
+	);
+
 	rays[gid] = aray;
- }   
+ }
 }
 
 void RadianceDirectLighting(
@@ -1205,9 +1246,9 @@ __kernel void GenerateCameraRay_exp(
  const int x = gid % width;
  const int y = gid / width;
 
- const int sgid = y > 0 ? (y - 1) * width + x : x;
+ const int sgid = y * width + x;
  const int sgid2 = sgid << 1;
-   
+
  const float invWidth = 1.f / (float)width;
  const float invHeight = 1.f / (float)height;
  
@@ -1221,13 +1262,6 @@ __kernel void GenerateCameraRay_exp(
  terminated[gid] = 0;
  results[gid].x = x, results[gid].y = y;
  vclr(results[gid].p);
-  
- Vec rdir;
-  vinit(rdir,
- 		camera->x.x * kcx + camera->y.x * kcy + camera->dir.x,
- 		camera->x.y * kcx + camera->y.y * kcy + camera->dir.y,
- 		camera->x.z * kcx + camera->y.z * kcy + camera->dir.z);
- //{ (rdir).x = camera->x.x * kcx + camera->y.x * kcy + camera->dir.x; (rdir).y = camera->x.y * kcx + camera->y.y * kcy + camera->dir.y; (rdir).z = camera->x.z * kcx + camera->y.z * kcy + camera->dir.z; };
 
  Vec rorig;
  rorig = camera->orig;
@@ -1236,6 +1270,13 @@ __kernel void GenerateCameraRay_exp(
  //vadd(rorig, rorig, camera->orig);
  //{ (rorig).x = (rorig).x + (camera->orig).x; (rorig).y = (rorig).y + (camera->orig).y; (rorig).z = (rorig).z + (camera->orig).z; }
 
+ Vec rdir;
+ vinit(rdir,
+    camera->x.x * kcx + camera->y.x * kcy + camera->dir.x,
+ 	camera->x.y * kcx + camera->y.y * kcy + camera->dir.y,
+ 	camera->x.z * kcx + camera->y.z * kcy + camera->dir.z);
+ //{ (rdir).x = camera->x.x * kcx + camera->y.x * kcy + camera->dir.x; (rdir).y = camera->x.y * kcx + camera->y.y * kcy + camera->dir.y; (rdir).z = camera->x.z * kcx + camera->y.z * kcy + camera->dir.z; };
+
  vnorm(rdir);
  //{ float l = 1.f / sqrt(((rdir).x * (rdir).x + (rdir).y * (rdir).y + (rdir).z * (rdir).z)); { float k = (l); { (rdir).x = k * (rdir).x; (rdir).y = k * (rdir).y; (rdir).z = k * (rdir).z; } }; };
  rinit(rays[gid], rorig, rdir);
@@ -1243,20 +1284,19 @@ __kernel void GenerateCameraRay_exp(
 }
 
 __kernel void FillPixel_exp(
-   const short width, const short height, const short currentSample,
-    __global Vec *colors, __global Result *results, __global int *pixels
+   const short width, const short height, const short currentSample, const short bleft,
+    __global Vec *colors, __global Result *results, __global int *pixelsLeft, __global int *pixelsRight, __global Camera *cameraRight, __global FirstHitInfo *fhi
  ) {
-    const int gid = get_global_id(0);
-	
+ const int gid = get_global_id(0);
+
  const int x = results[gid].x; //gid % width;
  const int y = results[gid].y; //gid / width;
  
- const int sgid = y > 0 ? (y - 1) * width + x : x;
+ const int sgid = y * width + x;
  const int sgid2 = sgid << 1;
- const int locPixel = (height - y) > 0 ? (height - y - 1) * width + x : x;
+ const int locPixelLeft = (height - y - 1) * width + x;
  
- if (y >= height)
-  return;  
+ if (y >= height) return;
  
  if (currentSample == 0) {
   vassign(colors[sgid], results[sgid].p);
@@ -1270,16 +1310,58 @@ __kernel void FillPixel_exp(
   //colors[sgid].x = (colors[sgid].x * k1 + results[sgid].p.x) * k2;
   //colors[sgid].y = (colors[sgid].y * k1 + results[sgid].p.y) * k2;
   //colors[sgid].z = (colors[sgid].z * k1 + results[sgid].p.z) * k2;
-
  }
+
+ //fhi[sgid].currentColor = colors[sgid];
+
 #ifdef __ANDROID__
- pixels[locPixel] = (toInt(colors[sgid].x)  << 16) |
-   (toInt(colors[sgid].y) << 8) |
-   (toInt(colors[sgid].z)) | 0xff000000;
+pixelsLeft[locPixelLeft] = (toInt(colors[sgid].x)  << 16) |
+    (toInt(colors[sgid].y) << 8) |
+    (toInt(colors[sgid].z)) | 0xff000000;
+
+if (bleft) {
+        const Vec l0 = fhi[sgid].firstHitPoint;
+
+        Vec p0;
+        vadd(p0, cameraRight->start, cameraRight->end);
+        vsmul(p0, 0.5f, p0);
+
+        Vec n;
+        vsmul(n, -1, cameraRight->dir)
+
+        Vec l;
+        vsub(l, cameraRight->orig, fhi[sgid].firstHitPoint);
+
+        float t;
+        bool bint = RectangleIntersect(n, p0, l0, l, &t);
+
+        if (bint) {
+            Vec p;
+            vsmul(p, t, l);
+            vadd(p, p, l0);
+            //vsmad(p, t, l, l0);
+
+            int xRight = (p.x - cameraRight->start.x) * width / (cameraRight->end.x - cameraRight->start.x) + .5f;
+            int yRight = (p.y - cameraRight->start.y) * height / (cameraRight->end.y - cameraRight->start.y) + .5f;
+
+            if (xRight >= 0 && xRight < width && yRight >= 0  && yRight < height) {
+                const int locPixelRight = yRight * width + xRight;
+
+                pixelsRight[locPixelRight] = (toInt(colors[sgid].x) << 16) |
+                    (toInt(colors[locPixelLeft].y) << 8) |
+                    (toInt(colors[locPixelLeft].z)) | 0xff000000;
+            }
+        }
+    }
 #else
- pixels[locPixel] = (toInt(colors[sgid].x)) |
-   (toInt(colors[sgid].y) << 8) |
-   (toInt(colors[sgid].z) << 16) | 0xff000000;
+pixelsLeft[locPixelLeft] = (toInt(colors[sgid].x)) |
+    (toInt(colors[sgid].y) << 8) |
+    (toInt(colors[sgid].z) << 16) | 0xff000000;
+if (bleft) {
+    pixelsRight[locPixelRight] = (toInt(colors[sgid].x)) |
+        (toInt(colors[sgid].y) << 8) |
+        (toInt(colors[sgid].z) << 16) | 0xff000000;
+}
 #endif   
 }
 
@@ -1361,7 +1443,7 @@ __kernel void GenerateCameraRay_expbox(
     const short x = (gid % bwidth) + startx;
     const short y = (gid / bwidth) + starty;
 
-    const int sgid = (y - starty + 1) > 0 ? (y - starty) * bwidth + (x - startx) : (x - startx);
+    const int sgid = (y - starty) * bwidth + (x - startx);
     const int sgid2 = sgid << 1;
 
     const float invWidth = 1.f / twidth;
@@ -1406,9 +1488,9 @@ __kernel void FillPixel_expbox(
     const short x = results[gid].x - startx; //gid % width;
     const short y = results[gid].y - starty; //gid / width;
 
-    const int sgid = y > 0 ? (y - 1) * bwidth + x : x;
+    const int sgid = y * bwidth + x;
     const int sgid2 = sgid << 1;
-    const int locPixel = (bheight - y) > 0 ? (bheight - y - 1) * width + x : x;
+    const int locPixel = (bheight - y - 1) * width + x;
     
     if (y >= bheight)
         return;

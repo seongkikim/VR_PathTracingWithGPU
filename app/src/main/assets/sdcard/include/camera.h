@@ -34,7 +34,7 @@ typedef struct {
 	// resolution in pixels
 	float width, height;
 	/* Calculated values */
-	Vec dir, x, y;
+	Vec dir, x, y, start, end;
 } Camera;
 
 #define HARD_CODED_CAMERA_FOV 45.f

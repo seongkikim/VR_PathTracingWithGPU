@@ -753,12 +753,12 @@ void UpdateCamera(bool bvr) {
 	float yDirection = sin(cameraLeft.pitch);
 	float zDirection = cos(cameraLeft.yaw) * cos(cameraLeft.pitch);
 
-	const Vec directionToCamera = { xDirection, yDirection, zDirection };
+	Vec directionToCamera = { xDirection, yDirection, zDirection };
 	vsmul(cameraLeft.dir, -1, directionToCamera);
 	vnorm(cameraLeft.dir);
 
 	const Vec up = { 0.f, 1.f, 0.f };
-	const float fov = (FLOAT_PI / 180.f) * HARD_CODED_CAMERA_FOV;
+    const float fov = (FLOAT_PI / 180.f) * HARD_CODED_CAMERA_FOV;
 
 	// axis x is orthogonal to the camera direction and up
 	vxcross(cameraLeft.x, cameraLeft.dir, up);
@@ -773,18 +773,46 @@ void UpdateCamera(bool bvr) {
 	// multiplies y axis by the fov
 	vsmul(cameraLeft.y, fov, cameraLeft.y);
 
+    const float invWidth = 1.f / (float)width;
+    const float invHeight = 1.f / (float)height;
+
+    float r1 = - 0.5f;
+    float r2 = - 0.5f;
+    float kcx = r1 * invWidth - .5f;
+    float kcy = r2 * invHeight - .5f;
+
+    Vec rdir;
+    vinit(rdir,
+          cameraLeft.x.s[0] * kcx + cameraLeft.y.s[0] * kcy + cameraLeft.dir.s[0],
+          cameraLeft.x.s[1] * kcx + cameraLeft.y.s[1] * kcy + cameraLeft.dir.s[1],
+          cameraLeft.x.s[2] * kcx + cameraLeft.y.s[2] * kcy + cameraLeft.dir.s[2]);
+
+    vadd(cameraLeft.start, cameraLeft.orig, rdir);
+
+    r1 = (float) width - 0.5f;
+    r2 = (float) height - 0.5f;
+    kcx = r1 * invWidth - .5f;
+    kcy = r2 * invHeight - .5f;
+
+    vinit(rdir,
+          cameraLeft.x.s[0] * kcx + cameraLeft.y.s[0] * kcy + cameraLeft.dir.s[0],
+          cameraLeft.x.s[1] * kcx + cameraLeft.y.s[1] * kcy + cameraLeft.dir.s[1],
+          cameraLeft.x.s[2] * kcx + cameraLeft.y.s[2] * kcy + cameraLeft.dir.s[2]);
+
+    vadd(cameraLeft.end, cameraLeft.orig, rdir);
+
 	if (bvr)
 	{
-		float xDirection = sin(cameraRight.yaw) * cos(cameraRight.pitch);
-		float yDirection = sin(cameraRight.pitch);
-		float zDirection = cos(cameraRight.yaw) * cos(cameraRight.pitch);
+		xDirection = sin(cameraRight.yaw) * cos(cameraRight.pitch);
+		yDirection = sin(cameraRight.pitch);
+		zDirection = cos(cameraRight.yaw) * cos(cameraRight.pitch);
 
-		const Vec directionToCamera = { xDirection, yDirection, zDirection };
+		directionToCamera = { xDirection, yDirection, zDirection };
 		vsmul(cameraRight.dir, -1, directionToCamera);
 		vnorm(cameraRight.dir);
 
-		const Vec up = { 0.f, 1.f, 0.f };
-		const float fov = (FLOAT_PI / 180.f) * HARD_CODED_CAMERA_FOV;
+		//up = { 0.f, 1.f, 0.f };
+		//fov = (FLOAT_PI / 180.f) * HARD_CODED_CAMERA_FOV;
 
 		// axis x is orthogonal to the camera direction and up
 		vxcross(cameraRight.x, cameraRight.dir, up);
@@ -798,6 +826,30 @@ void UpdateCamera(bool bvr) {
 
 		// multiplies y axis by the fov
 		vsmul(cameraRight.y, fov, cameraRight.y);
+
+        r1 = - 0.5f;
+        r2 = - 0.5f;
+        kcx = r1 * invWidth - .5f;
+        kcy = r2 * invHeight - .5f;
+
+        vinit(rdir,
+              cameraRight.x.s[0] * kcx + cameraRight.y.s[0] * kcy + cameraRight.dir.s[0],
+              cameraRight.x.s[1] * kcx + cameraRight.y.s[1] * kcy + cameraRight.dir.s[1],
+              cameraRight.x.s[2] * kcx + cameraRight.y.s[2] * kcy + cameraRight.dir.s[2]);
+
+        vadd(cameraRight.start, cameraRight.orig, rdir);
+
+        r1 = (float) width - 0.5f;
+        r2 = (float) height - 0.5f;
+        kcx = r1 * invWidth - .5f;
+        kcy = r2 * invHeight - .5f;
+
+        vinit(rdir,
+              cameraRight.x.s[0] * kcx + cameraRight.y.s[0] * kcy + cameraRight.dir.s[0],
+              cameraRight.x.s[1] * kcx + cameraRight.y.s[1] * kcy + cameraRight.dir.s[1],
+              cameraRight.x.s[2] * kcx + cameraRight.y.s[2] * kcy + cameraRight.dir.s[2]);
+
+        vadd(cameraRight.end, cameraRight.orig, rdir);
 	}
 }
 

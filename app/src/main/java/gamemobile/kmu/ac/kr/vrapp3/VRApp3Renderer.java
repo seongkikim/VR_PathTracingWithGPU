@@ -276,7 +276,7 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
 
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
 
-        camOrigTarg = initSmallPtGPU(1, 128, "kernels/rendering_kernel.cl", texW, texH, "scenes/obj-model.txt", Environment.getExternalStorageDirectory() + "/" + context.getPackageName(), context.getAssets(), true);
+        camOrigTarg = initSmallPtGPU(1, 128, "kernels/rendering_kernel_exp.cl", texW, texH, "scenes/obj-model.txt", Environment.getExternalStorageDirectory() + "/" + context.getPackageName(), context.getAssets(), true);
 
         Log.d("VRApp3Renderer", "End of onSurfaceCreated");
     }
@@ -412,7 +412,8 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
         Log.e("VRApp3Renderer", "Start of onSurfaceChanged");
 
         try {
-            GLES20.glViewport(0, 0, width, height);//specifies transformation from normalized device coordinates to window coordinates
+            // Specifies transformation from normalized device coordinates to window coordinates
+            GLES20.glViewport(0, 0, width / 2, height);
         } catch (Exception e) {
             // TODO Auto-generated catch block
             Log.d("VRApp3Renderer",e.getMessage());

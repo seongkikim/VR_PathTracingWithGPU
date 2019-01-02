@@ -74,8 +74,8 @@ typedef float3 Vec;
 #define vdot(a, b) ( dot(a, b) )
 #define vnorm(v) { v = normalize(v); }
 #define vxcross(v, a, b) { v = cross(a, b); }
-#define vfilter(v) (max(v.x, v.y, v,z)) //((v).x > (v).y && (v).x > (v).z ? (v).x : (v).y > (v).z ? (v).y : (v).z)
-#define viszero(v) (((v).x == 0.f) && ((v).y == 0.f) && ((v).z == 0.f))
+#define vfilter(v) (max(v.x, v.y, v,z)) // ((v).x > (v).y && (v).x > (v).z ? (v).x : (v).y > (v).z ? (v).y : (v).z)
+#define viszero(v) ((v.x == 0.f) && (v.y == 0.f) && (v.z == 0.f))
 #define norm(v) ( length(v) )
 #define dist(a, b) ( distance(a, b) )
 #define affine(v, t, a, b) { v = t * a + (1 - t) * b; }

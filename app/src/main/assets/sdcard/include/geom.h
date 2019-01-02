@@ -97,4 +97,8 @@ typedef struct {
 #endif
 } Shape;
 
+typedef struct {
+    int x, y, idxShape;
+    Vec firstHitPoint; //, currentColor;
+} FirstHitInfo;
 #endif	/* _GEOM_H */
