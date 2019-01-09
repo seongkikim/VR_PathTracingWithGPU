@@ -99,6 +99,11 @@ typedef struct {
 
 typedef struct {
     int x, y, idxShape;
-    Vec firstHitPoint; //, currentColor;
+    Vec ptFirstHit; //, currentColor;
 } FirstHitInfo;
+
+typedef struct {
+    int x, y;
+    Vec colDiff;
+} ToDiffInfo;
 #endif	/* _GEOM_H */

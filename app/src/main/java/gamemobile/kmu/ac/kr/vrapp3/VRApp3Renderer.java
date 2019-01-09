@@ -362,6 +362,7 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
             strEyeType = "left";
             bleft = true;
         }
+        else strEyeType = "right";
 
         Log.i("VRApp3Renderer", "Start of onDrawEye for the " + strEyeType +" eye");
 

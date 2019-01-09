@@ -37,6 +37,7 @@ typedef cl_float3 Vec;
 #define vsadd(v, a, b) vinit(v, (b).s[0] + a, (b).s[1] + a, (b).s[2] + a)
 #define vssub(v, a, b) vinit(v, (b).s[0] - a, (b).s[1] - a, (b).s[2] - a)
 #define vmul(v, a, b) vinit(v, (a).s[0] * (b).s[0], (a).s[1] * (b).s[1], (a).s[2] * (b).s[2])
+#define vmad(v, a, b, c) vinit(v, (b).s[0] * a + (c).s[0], (b).s[1] * a + (c).s[1], (b).s[2] * a + (c).s[2])
 #define vsmul(v, a, b) vinit(v, (b).s[0] * a, (b).s[1] * a, (b).s[2] * a)
 #define vdot(a, b) ((a).s[0] * (b).s[0] + (a).s[1] * (b).s[1] + (a).s[2] * (b).s[2])
 #define vnorm(v) { float l = 1.f / sqrt(vdot(v, v)); vsmul(v, l, v); }
@@ -84,7 +85,7 @@ typedef float3 Vec;
 #define toInt(x) ((int)(pow(clamp(x, 0.f, 1.f), 1.f / 2.2f) * 255.f + .5f))
 
 // Rendering flags
-#define RFLAGS_DISABLE_DIFFUSE_PATH 1
+//#define RFLAGS_DISABLE_DIFFUSE_PATH 1
 
 #endif	/* _VEC_H */
 

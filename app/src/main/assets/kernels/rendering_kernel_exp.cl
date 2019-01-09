@@ -125,12 +125,14 @@ __constant
 	return 0.0f;
 }
 
-bool RectangleIntersect(const Vec n, const Vec p0, const Vec l0, const Vec l, float *t)
+bool PlaneIntersect(const Vec n, const Vec p0, const Vec l0, const Vec l, float *t)
 {
     // assuming vectors are all normalized
     float denom = vdot(n, l);
-    if (denom > 1e-6) {
-        Vec p0l0 = p0 - l0;
+    if (denom > 0.0f) {
+        //Vec p0l0 = p0 - l0;
+        Vec p0l0;
+        vsub(p0l0, p0, l0); //= p0 - l0;
         *t = vdot(p0l0, n) / denom;
         return (*t >= 0);
     }
@@ -206,6 +208,34 @@ bool intersection_bound_test(const Ray r, Bound bound
     return (t_min <= t_max);
 }
 
+int IntersectAll(
+#ifdef __ANDROID__
+    __global
+#else
+    __constant
+#endif
+const Shape *shapes,
+const short shapeCnt,
+const Ray *r,
+float *t, unsigned int *id) {
+    float inf = (*t) = 1e20f;
+    short i = shapeCnt - 1;
+    int intersected = 0;
+
+    for (; i--;) {
+        float d = 0.0f;
+        if (shapes[i].type == SPHERE ) d = SphereIntersect(&shapes[i].s, r);
+        if (shapes[i].type == TRIANGLE ) d = TriangleIntersect(&shapes[i].t, r);
+        if ((d != 0.0f) && (d < *t)) {
+            *t = d;
+            *id = i;
+            intersected = 1;
+        }
+    }
+
+    return intersected;
+}
+
 int Intersect(
 #ifdef __ANDROID__
 __global
@@ -232,14 +262,14 @@ __constant
  short knCnt, 
 #endif
  const Ray *r,
- float *t,
- unsigned int *id
+ float *t, unsigned int *id
 #ifdef DEBUG_INTERSECTIONS
  , __global int *debug1,
  __global float *debug2
 #endif
  ) {
 #if (ACCELSTR == 0)
+    int intersected = 0;
 	float inf = (*t) = 1e20f;
 	short i = shapeCnt - 1;
 	
@@ -250,8 +280,10 @@ __constant
 		if ((d != 0.f) && (d < *t)) {
 			*t = d;
 			*id = i;
+            intersected = 1;
 		}
 	}
+	return intersected;
 #ifdef DEBUG_INTERSECTIONS
 	debug1[get_global_id(0)] = *id;
 	debug2[get_global_id(0)] = *t;
@@ -647,9 +679,7 @@ __global
 #else
 __constant
 #endif
- const Shape *shapes,
- const short shapeCnt,
- const short lightCnt,
+ const Shape *shapes, const short shapeCnt, const short lightCnt,
  const short width, const short height, const short depth,
 #if (ACCELSTR == 1)
 __constant
@@ -671,7 +701,7 @@ __constant
  Ray *currentRay,
  __global unsigned int *seed0, __global unsigned int *seed1, 
  __global Vec *throughput, __global char *specularBounce, __global char *terminated,
- __global Vec *result, __global FirstHitInfo *fhi
+ __global Result *result, __global FirstHitInfo *fhi
 #ifdef DEBUG_INTERSECTIONS
  , __global int *debug1,
  __global float *debug2
@@ -680,19 +710,18 @@ __constant
   float t;
   unsigned int id = 0;
 
-  if (!Intersect(shapes, shapeCnt, 
+  if (!Intersect(shapes, shapeCnt,
 #if (ACCELSTR == 1)
-  btn, btl,
+    btn, btl,
 #elif (ACCELSTR == 2)
-  kng, kngCnt, kn, knCnt,
+    kng, kngCnt, kn, knCnt,
 #endif
-  currentRay, &t, &id
+    currentRay, &t, &id
 #ifdef DEBUG_INTERSECTIONS
-  , debug1, debug2
+    , debug1, debug2
 #endif
   )) {
    *terminated = 1;
-   if (depth == 0) fhi->idxShape = -1; // In the primary ray case,
 
    return;
   }
@@ -705,21 +734,10 @@ __constant
 
   // In the primary ray case, the current color is initialized to the last color...
   if (depth == 0) {
-    /*
-    for(int i = 1; i <= height; i++) {
-        for(int j = 0; j < width; j++) {
-            int index = (i - 1) * width + j;
-            if (fhi[index].firstHitPoint.x == hitPoint.x && fhi[index].firstHitPoint.y == hitPoint.y && fhi[index].firstHitPoint.z == hitPoint.z) {
-                *result = fhi[index].currentColor;
-
-                i = height;
-                break;
-            }
-        }
-    }
-    */
-    fhi->firstHitPoint = hitPoint;
-    fhi->idxShape = id;
+        fhi->x = result->x;
+        fhi->y = result->y;
+        vassign(fhi->ptFirstHit, hitPoint);
+        fhi->idxShape = id;
   }
 
   Vec normal, col;
@@ -772,7 +790,7 @@ __constant
     //{ float k = (fabs(dp)); { (eCol).x = k * (eCol).x; (eCol).y = k * (eCol).y; (eCol).z = k * (eCol).z; } };
 	vmul(eCol, *throughput, eCol);
     //{ (eCol).x = (*throughput).x * (eCol).x; (eCol).y = (*throughput).y * (eCol).y; (eCol).z = (*throughput).z * (eCol).z; };
-	vadd(*result, *result, eCol);
+	vadd(result->p, result->p, eCol);
     //{ (result)->x = (result)->x + (eCol).x; (result)->y = (result)->y + (eCol).y; (result)->z = (result)->z + (eCol).z; };
    }
 
@@ -796,7 +814,7 @@ __constant
 
    vmul(Ld, *throughput, Ld);
    //{ (Ld).x = (throughput)->x * (Ld).x; (Ld).y = (throughput)->y * (Ld).y; (Ld).z = (throughput)->z * (Ld).z; };
-   vadd(*result, *result, Ld);
+   vadd(result->p, result->p, Ld);
    //{ (result)->x = (result)->x + (Ld).x; (result)->y = (result)->y + (Ld).y; (result)->z = (result)->z + (Ld).z; };
 
    float r1 = 2.f * FLOAT_PI * GetRandom(seed0, seed1);
@@ -969,31 +987,25 @@ __constant
 
  const int x = results[gid].x;//gid % width; //
  const int y = results[gid].y;//gid / width; //
-
- const int sgid2 = gid << 1;
+ const int sgid = y * width + x;
+ const int sgid2 = sgid << 1;
 
  if (terminated[gid] != 1)
  {
-	Ray aray = rays[gid];
-
-	if (depth == 0) {
-        fhi[gid].x = x;
-        fhi[gid].y = y;
-	}
-
+	Ray aray = rays[sgid];
 	RadianceOnePathTracing(shapes, shapeCnt, lightCnt, width, height, depth,
 #if (ACCELSTR == 1)
 			btn, btl, 
 #elif (ACCELSTR == 2)
 			kng, kngCnt, kn, knCnt, 
 #endif
-			&aray, &seedsInput[sgid2], &seedsInput[sgid2+1], &throughput[gid], &specularBounce[gid], &terminated[gid], &results[gid].p, &fhi[gid]
+			&aray, &seedsInput[sgid2], &seedsInput[sgid2+1], &throughput[sgid], &specularBounce[sgid], &terminated[sgid], &results[sgid], &fhi[sgid]
 #ifdef DEBUG_INTERSECTIONS
 		, debug1, debug2
 #endif
 	);
 
-	rays[gid] = aray;
+	rays[sgid] = aray;
  }
 }
 
@@ -1240,7 +1252,7 @@ __kernel void GenerateCameraRay_exp(
   __constant Camera *camera,
   __global unsigned int *seedsInput,
   const short width, const short height,
-  __global Ray *rays, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results) {
+  __global Ray *rays, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results, __global FirstHitInfo *fhi) {
  const int gid = get_global_id(0);
 
  const int x = gid % width;
@@ -1263,6 +1275,10 @@ __kernel void GenerateCameraRay_exp(
  results[gid].x = x, results[gid].y = y;
  vclr(results[gid].p);
 
+ fhi[gid].x = x, fhi[gid].y = y;
+ fhi[gid].idxShape = -1;
+ vclr(fhi[gid].ptFirstHit);
+
  Vec rorig;
  rorig = camera->orig;
  //vsmul(rorig, 0.1f, rdir);
@@ -1284,26 +1300,24 @@ __kernel void GenerateCameraRay_exp(
 }
 
 __kernel void FillPixel_exp(
-   const short width, const short height, const short currentSample, const short bleft,
-    __global Vec *colors, __global Result *results, __global int *pixelsLeft, __global int *pixelsRight, __global Camera *cameraRight, __global FirstHitInfo *fhi
- ) {
+   const short width, const short height, const short bleft,
+   __global int* currentSample, __global Vec *colors, __global int *pixels, __global Result *results) {
  const int gid = get_global_id(0);
 
  const int x = results[gid].x; //gid % width;
  const int y = results[gid].y; //gid / width;
- 
+
+ if (x < 0 || x >= width || y < 0 || y >= height) return;
+
  const int sgid = y * width + x;
  const int sgid2 = sgid << 1;
- const int locPixelLeft = (height - y - 1) * width + x;
- 
- if (y >= height) return;
- 
- if (currentSample == 0) {
+
+ if (currentSample[sgid] == 0) {
   vassign(colors[sgid], results[sgid].p);
   //{ (colors[sgid]).x = (r).x; (colors[sgid]).y = (r).y; (colors[sgid]).z = (r).z; };
  } else {
-  const float k1 = currentSample;
-  const float k2 = 1.f / (currentSample + 1.f);
+  const float k1 = currentSample[sgid];
+  const float k2 = 1.f / (k1 + 1.f);
 
   vmad(colors[sgid], colors[sgid], k1, results[sgid].p);
   vsmul(colors[sgid], k2, colors[sgid]);
@@ -1312,57 +1326,141 @@ __kernel void FillPixel_exp(
   //colors[sgid].z = (colors[sgid].z * k1 + results[sgid].p.z) * k2;
  }
 
+ currentSample[sgid]++;
  //fhi[sgid].currentColor = colors[sgid];
 
 #ifdef __ANDROID__
-pixelsLeft[locPixelLeft] = (toInt(colors[sgid].x)  << 16) |
-    (toInt(colors[sgid].y) << 8) |
-    (toInt(colors[sgid].z)) | 0xff000000;
+ const int locPixelInv = (height - y - 1) * width + x;
 
-if (bleft) {
-        const Vec l0 = fhi[sgid].firstHitPoint;
-
-        Vec p0;
-        vadd(p0, cameraRight->start, cameraRight->end);
-        vsmul(p0, 0.5f, p0);
-
-        Vec n;
-        vsmul(n, -1, cameraRight->dir)
-
-        Vec l;
-        vsub(l, cameraRight->orig, fhi[sgid].firstHitPoint);
-
-        float t;
-        bool bint = RectangleIntersect(n, p0, l0, l, &t);
-
-        if (bint) {
-            Vec p;
-            vsmul(p, t, l);
-            vadd(p, p, l0);
-            //vsmad(p, t, l, l0);
-
-            int xRight = (p.x - cameraRight->start.x) * width / (cameraRight->end.x - cameraRight->start.x) + .5f;
-            int yRight = (p.y - cameraRight->start.y) * height / (cameraRight->end.y - cameraRight->start.y) + .5f;
-
-            if (xRight >= 0 && xRight < width && yRight >= 0  && yRight < height) {
-                const int locPixelRight = yRight * width + xRight;
-
-                pixelsRight[locPixelRight] = (toInt(colors[sgid].x) << 16) |
-                    (toInt(colors[locPixelLeft].y) << 8) |
-                    (toInt(colors[locPixelLeft].z)) | 0xff000000;
-            }
-        }
-    }
+ pixels[locPixelInv] = (toInt(colors[sgid].x)  << 16) |
+     (toInt(colors[sgid].y) << 8) |
+     (toInt(colors[sgid].z)) | 0xff000000;
 #else
 pixelsLeft[locPixelLeft] = (toInt(colors[sgid].x)) |
     (toInt(colors[sgid].y) << 8) |
     (toInt(colors[sgid].z) << 16) | 0xff000000;
+
 if (bleft) {
     pixelsRight[locPixelRight] = (toInt(colors[sgid].x)) |
         (toInt(colors[sgid].y) << 8) |
         (toInt(colors[sgid].z) << 16) | 0xff000000;
 }
-#endif   
+#endif
+}
+
+__kernel void FillDiffPixel_exp(
+        const short width, const short height, __global Result *results,
+        __global FirstHitInfo *fhi, __global const Shape *shapes, const short shapeCnt, __global Camera *cameraDiff, __global ToDiffInfo *tdi,
+#if (ACCELSTR == 1)
+__constant
+
+     BVHNodeGPU *btn,
+    __constant
+
+     BVHNodeGPU *btl
+#elif (ACCELSTR == 2)
+__constant
+
+     KDNodeGPU *kng,
+     short kngCnt,
+    __constant
+
+     int *kn,
+     short knCnt
+#endif
+) {
+    const int gid = get_global_id(0);
+
+    const int x = results[gid].x; //gid % width;
+    const int y = results[gid].y; //gid / width;
+
+    if (x < 0 || x >= width || y < 0 || y >= height) return;
+
+    const int sgid = y * width + x;
+
+    tdi[sgid].x = -1;
+    tdi[sgid].y = -1;
+    vclr(tdi[sgid].colDiff);
+
+    if (fhi[sgid].idxShape == -1) return;
+
+    const Vec l0 = fhi[sgid].ptFirstHit;
+
+    Vec p0;
+    vassign(p0, cameraDiff->start);
+    //vadd(p0, cameraDiff->start, cameraDiff->end);
+    //vsmul(p0, 0.5f, p0);
+    //vnorm(p0);
+
+    Vec n;
+    vsmul(n, -1, cameraDiff->dir);
+    vnorm(n);
+
+    Vec vl;
+    vsub(vl, cameraDiff->orig, fhi[sgid].ptFirstHit);
+    vnorm(vl);
+
+    float t1;
+    bool brint = PlaneIntersect(n, p0, l0, vl, &t1);
+
+    if (!brint) return;
+
+    float t2;
+    Ray ray;
+    unsigned int id;
+
+    Vec ve;
+    vsub(ve, fhi[sgid].ptFirstHit, cameraDiff->orig);
+    vnorm(ve);
+
+    rinit(ray, cameraDiff->orig, ve);
+    //rinit(ray, fhi[sgid].ptFirstHit, vl);
+
+    int irint = Intersect(shapes, shapeCnt,
+#if (ACCELSTR == 1)
+            btn, btl,
+#elif (ACCELSTR == 2)
+    kng, kngCnt,
+        kn, knCnt,
+#endif
+        &ray, &t2, &id);
+
+    if (id != fhi[sgid].idxShape) return;
+    //if (irint && t1 >= t2) return;
+
+    Vec p;
+    vsmul(p, t1, vl);
+    vadd(p, p, l0);
+
+    if (p.x >= cameraDiff->start.x && p.x < cameraDiff->end.x && p.y >= cameraDiff->start.y && p.y < cameraDiff->end.y)
+    {
+        int xDiff = round(((p.x - cameraDiff->start.x) / (cameraDiff->end.x - cameraDiff->start.x)) * (float)(width - 1));
+        int yDiff = round(((p.y - cameraDiff->start.y) / (cameraDiff->end.y - cameraDiff->start.y)) * (float)(height - 1));
+
+        const int locPixelDiff = yDiff * width + xDiff;
+
+        tdi[sgid].x = xDiff;
+        tdi[sgid].y = yDiff;
+        tdi[sgid].colDiff = results[sgid].p;
+#if 0
+        //lock(the_lock);
+          if (currentSampleDiff[locPixelDiff] == 0) {
+           vassign(colorsDiff[locPixelDiff], results[sgid].p); //colors[sgid]);
+          }
+          else {
+           const float k1 = currentSampleDiff[locPixelDiff];
+           const float k2= 1.f / (k1 + 1.f);
+
+           //Vec redP;
+           //vinit(redP, 1.0f, 0.0f, 0.0f);
+           vmad(colorsDiff[locPixelDiff], k1, colorsDiff[locPixelDiff], results[sgid].p);
+           vsmul(colorsDiff[locPixelDiff], k2, colorsDiff[locPixelDiff]);
+          }
+
+          currentSampleDiff[locPixelDiff]++;
+          //unlock(the_lock);
+#endif
+    }
 }
 
 #ifdef CPU_PARTRENDERING

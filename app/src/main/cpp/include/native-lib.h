@@ -23,7 +23,7 @@
 #endif
 
 #define MAX_FN 255
-#define DIFF_LEFTRIGHTEYE 30.0f
+#define DIFF_LEFTRIGHTEYE 10.0f
 //#define CURRENT_SAMPLE
 
 extern int useGPU;
