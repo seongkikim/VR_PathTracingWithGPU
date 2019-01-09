@@ -66,7 +66,7 @@ Result *result;
 char *specularBounce, *terminated;
 
 static cl_mem rayBuffer, throughputBuffer, specularBounceBuffer, terminatedBuffer, resultBuffer;
-static cl_kernel kernelGen, kernelRadiance, kernelFill, kernelFillDiff;
+static cl_kernel kernelGen, kernelRadiance, kernelFill, kernelFillDiff, kernelMedian;
 char kernelFileName[MAX_FN] = "kernels/rendering_kernel_exp.cl";
 #else
 static cl_kernel kernel;
@@ -112,7 +112,7 @@ short knCnt;
 
 /* OpenCL variables */
 static cl_context context;
-static cl_mem colorBufferLeft, colorBufferRight, pixelBufferLeft, pixelBufferRight, seedBufferLeft, seedBufferRight, cameraBufferLeft, cameraBufferRight, currentSampleBufferLeft, currentSampleBufferRight;
+static cl_mem colorBufferLeft, colorBufferRight, pixelBufferLeft, pixelBufferRight, pixelBufferTemp, seedBufferLeft, seedBufferRight, cameraBufferLeft, cameraBufferRight, currentSampleBufferLeft, currentSampleBufferRight;
 static cl_mem shapeBuffer, fhiBuffer, tdiBuffer;
 static cl_command_queue commandQueue;
 static cl_program program;
@@ -320,6 +320,9 @@ void AllocateBuffers() {
     pixelBufferRight = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeBytes, NULL, &status);
     clErrchk(status);
 
+	pixelsTemp = (unsigned int *)malloc(sizeBytes);
+	pixelBufferTemp = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeBytes, NULL, &status);
+	clErrchk(status);
 #ifdef EXP_KERNEL
     sizeBytes = sizeof(Ray) * pixelCount;
     ray = (Ray *)malloc(sizeBytes);
@@ -747,6 +750,9 @@ void SetUpOpenCL() {
 	clErrchk(status);
 
 	kernelFillDiff = clCreateKernel(program, "FillDiffPixel_exp", &status);
+	clErrchk(status);
+
+	kernelMedian = clCreateKernel(program, "MedianFilter2D", &status);
 	clErrchk(status);
 #ifdef CPU_PARTRENDERING
     kernelGenBox = clCreateKernel(program, "GenerateCameraRay_expbox", &status);
@@ -1851,22 +1857,40 @@ unsigned int *DrawFrameVR(short bleft) {
         if (bleft) {
             clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &currentSampleBufferLeft));
             clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorBufferLeft));
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pixelBufferLeft));
+            //clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pixelBufferLeft));
         }
         else {
             clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &currentSampleBufferRight));
             clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorBufferRight));
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pixelBufferRight));
+            //clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pixelBufferRight));
         }
+		clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pixelBufferTemp));
 
         clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &resultBuffer));
         setTotalTime += (WallClockTime() - setStartTime);
 
 		kernelStartTime = WallClockTime();
 		ExecuteKernel(kernelFill, width * height);
+		clFinish(commandQueue);
+		kernelTotalTime += (WallClockTime() - kernelStartTime);
+#if 1
+		index = 0;
+
+		setStartTime = WallClockTime();
+        clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(cl_mem), (void *) &pixelBufferTemp));
+
+		if (bleft) { clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(cl_mem), (void *) &pixelBufferLeft)); }
+		else clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(cl_mem), (void *) &pixelBufferRight));
+
+		clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(short), (void *) &width));
+		clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(short), (void *) &height));
+		setTotalTime += (WallClockTime() - setStartTime);
+
+		kernelStartTime = WallClockTime();
+		ExecuteKernel(kernelMedian, width * height);
 		//clFinish(commandQueue);
 		kernelTotalTime += (WallClockTime() - kernelStartTime);
-
+#endif
 		index = 0;
 
 		setStartTime = WallClockTime();
@@ -2111,7 +2135,7 @@ unsigned int *DrawFrameVR(short bleft) {
 #else
         //clEnqueueReadBuffer(commandQueue, fhiBuffer, CL_TRUE, 0, sizeof(FirstHitInfo) * width * height, fhi, 0, NULL, NULL);
         //clEnqueueReadBuffer(commandQueue, colorBufferLeft, CL_TRUE, 0, sizeof(Vec) * width * height, colorsLeft, 0, NULL, NULL);
-        clEnqueueReadBuffer(commandQueue, pixelBufferLeft, CL_TRUE, 0, sizeof(unsigned char[4]) * width * height, pixelsLeft, 0, NULL, NULL);
+        clEnqueueReadBuffer(commandQueue, pixelBufferLeft, CL_TRUE, 0, sizeof(unsigned int) * width * height, pixelsLeft, 0, NULL, NULL);
 
         //memset(pixelsRight, 0, sizeof(unsigned char[4]) * width * height);
 

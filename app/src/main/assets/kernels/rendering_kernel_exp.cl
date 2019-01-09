@@ -1463,6 +1463,51 @@ __constant
     }
 }
 
+#define WINDOW_SIZE 3
+#define ARRAY_SIZE_ARG 9
+
+void bubbleSort(unsigned int *v,int size)
+{
+    // bubble-sort
+    for (int i = 0; i < size; i++) {
+        for (int j = i + 1; j < size; j++) {
+            if (v[i] > v[j]) { /* swap? */
+                unsigned int tmp = v[i];
+                v[i] = v[j];
+                v[j] = tmp;
+            }
+        }
+    }
+}
+
+// __constant int WINDOW_SIZE=(int)sqrt((float)ARRAY_SIZE_ARG);
+__kernel void MedianFilter2D( __global unsigned int *input,__global unsigned int* output,short width, short height)
+{
+    int filter_offset=WINDOW_SIZE/2;
+
+    int gid = get_global_id(0);
+
+    const int x = gid % width;
+    const int y = gid / width;
+
+    if(y>height || x>width) return;
+
+    unsigned int window[ARRAY_SIZE_ARG];
+    for (int counter=0; counter<WINDOW_SIZE*WINDOW_SIZE; counter++) {
+        window[counter]=0;
+    }
+
+    int count=0;
+    for( int k=y-filter_offset; k<=y+filter_offset; k++) {
+        for (int l=x-filter_offset; l<=x+filter_offset; l++) {
+            if(k>=0 && l>=0 && k<height && l<width) window[count++]=input[(k)*width+(l)];
+        }
+    }
+
+    bubbleSort(window,WINDOW_SIZE*WINDOW_SIZE);
+    output[y * width + x]=window[WINDOW_SIZE*WINDOW_SIZE/2];
+}
+
 #ifdef CPU_PARTRENDERING
 __kernel void RadiancePathTracing_expbox(
 #ifdef __ANDROID__

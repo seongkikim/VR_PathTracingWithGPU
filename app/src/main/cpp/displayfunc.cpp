@@ -89,7 +89,7 @@ int amiSmallptCPU;
 
 short width = 640;
 short height = 480;
-unsigned int *pixelsLeft, *pixelsRight;
+unsigned int *pixelsLeft, *pixelsRight, *pixelsTemp;
 char captionBuffer[256];
 
 Material *materials;

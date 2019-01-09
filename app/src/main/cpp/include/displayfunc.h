@@ -39,7 +39,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 extern short width;
 extern short height;
-extern unsigned int *pixelsLeft, *pixelsRight;
+extern unsigned int *pixelsLeft, *pixelsRight, *pixelsTemp;
 extern unsigned int renderingFlags;
 extern char captionBuffer[256];
 
