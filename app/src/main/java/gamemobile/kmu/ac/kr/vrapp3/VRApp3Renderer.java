@@ -30,7 +30,7 @@ import javax.microedition.khronos.opengles.GL10;
 
 public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Renderer {
     /** Size of the position data in elements. */
-    private final int mBytesPerFloat = 4, mPositionDataSize = 3, mTexCoordinateDataSize = 2, texW = 640, texH = 480;
+    private final int mBytesPerFloat = 4, mPositionDataSize = 3, mTexCoordinateDataSize = 2, texW = 640, texH = 540;
 
     /** Store our model data in a float buffer. */
     private final FloatBuffer mScreenPosition, mTextureCoordinate;

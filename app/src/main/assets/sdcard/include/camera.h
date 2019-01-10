@@ -37,7 +37,7 @@ typedef struct {
 	Vec dir, x, y, start, end;
 } Camera;
 
-#define HARD_CODED_CAMERA_FOV 45.f
+#define HARD_CODED_CAMERA_FOV 90.f
 
 #endif	/* _CAMERA_H */
 
