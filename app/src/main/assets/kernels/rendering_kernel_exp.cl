@@ -959,7 +959,7 @@ __constant
  const short shapeCnt,
  const short lightCnt,
  const short width, const short height,
- const short depth,
+ const short curdepth,
 #if (ACCELSTR == 1)
 __constant
 
@@ -976,7 +976,7 @@ __constant
 
  int *kn, 
  short knCnt, 
-#endif  
+#endif
  __global Ray *rays, __global unsigned int *seedsInput, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results, __global FirstHitInfo *fhi
 #ifdef DEBUG_INTERSECTIONS
  , __global int *debug1,
@@ -990,21 +990,35 @@ __constant
  const int sgid = y * width + x;
  const int sgid2 = sgid << 1;
 
- if (terminated[gid] != 1)
+ if (terminated[sgid] != 1)
  {
+#if 1
+    int max_depth = MAX_DEPTH;
+    const int midx = round((float)width / 2.0f), midy = round((float)height / 2.0f);
+    const float dist = sqrt((float)(midx - x) * (midx - x) + (float)(midy - y) * (midy - y)), maxdist =  sqrt((float)midx * midx + (float)midy * midy), partdist = maxdist / 3.0f;
+    const float partdepth = (float)MAX_DEPTH / 3.0f;
+
+    if (dist >= 0 && dist < partdist) max_depth = MAX_DEPTH;
+    else if (dist >= partdist && dist < 2.0f * partdist) max_depth = round(2.0f * partdepth);
+    else if (dist >= 2.0f * partdist) max_depth = round(partdepth);
+
+    if (curdepth >= max_depth ) {
+        terminated[sgid] = 1;
+        return;
+    }
+#endif
 	Ray aray = rays[sgid];
-	RadianceOnePathTracing(shapes, shapeCnt, lightCnt, width, height, depth,
+	RadianceOnePathTracing(shapes, shapeCnt, lightCnt, width, height, curdepth,
 #if (ACCELSTR == 1)
 			btn, btl, 
 #elif (ACCELSTR == 2)
 			kng, kngCnt, kn, knCnt, 
 #endif
-			&aray, &seedsInput[sgid2], &seedsInput[sgid2+1], &throughput[sgid], &specularBounce[sgid], &terminated[sgid], &results[sgid], &fhi[sgid]
+			&aray, &seedsInput[sgid2], &seedsInput[sgid2 + 1], &throughput[sgid], &specularBounce[sgid], &terminated[sgid], &results[sgid], &fhi[sgid]
 #ifdef DEBUG_INTERSECTIONS
 		, debug1, debug2
 #endif
 	);
-
 	rays[sgid] = aray;
  }
 }
