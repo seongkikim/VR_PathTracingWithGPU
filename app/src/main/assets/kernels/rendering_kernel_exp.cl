@@ -992,21 +992,6 @@ __constant
 
  if (terminated[sgid] != 1)
  {
-#if 1
-    int max_depth = MAX_DEPTH;
-    const int midx = round((float)width / 2.0f), midy = round((float)height / 2.0f);
-    const float dist = sqrt((float)(midx - x) * (midx - x) + (float)(midy - y) * (midy - y)), maxdist =  sqrt((float)midx * midx + (float)midy * midy), partdist = maxdist / 3.0f;
-    const float partdepth = (float)MAX_DEPTH / 3.0f;
-
-    if (dist >= 0 && dist < partdist) max_depth = MAX_DEPTH;
-    else if (dist >= partdist && dist < 2.0f * partdist) max_depth = round(2.0f * partdepth);
-    else if (dist >= 2.0f * partdist) max_depth = round(partdepth);
-
-    if (curdepth >= max_depth ) {
-        terminated[sgid] = 1;
-        return;
-    }
-#endif
 	Ray aray = rays[sgid];
 	RadianceOnePathTracing(shapes, shapeCnt, lightCnt, width, height, curdepth,
 #if (ACCELSTR == 1)
@@ -1265,7 +1250,7 @@ __constant
 __kernel void GenerateCameraRay_exp(
   __constant Camera *camera,
   __global unsigned int *seedsInput,
-  const short width, const short height,
+  const short width, const short height, const short midwidth, const short midheight, const float maxdist,
   __global Ray *rays, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results, __global FirstHitInfo *fhi) {
  const int gid = get_global_id(0);
 
@@ -1292,6 +1277,17 @@ __kernel void GenerateCameraRay_exp(
  fhi[gid].x = x, fhi[gid].y = y;
  fhi[gid].idxShape = -1;
  vclr(fhi[gid].ptFirstHit);
+
+#if 1
+ const float dist = sqrt((float)(midwidth - x) * (midwidth - x) + (float)(midheight - y) * (midheight - y));
+ const float prob = 1.0f - dist / maxdist;
+
+ float rand = GetRandom(&seedsInput[sgid2], &seedsInput[sgid2 + 1]);
+ if (rand > prob) {
+  terminated[sgid] = 1;
+  return;
+ }
+#endif
 
  Vec rorig;
  rorig = camera->orig;
@@ -1498,10 +1494,10 @@ unsigned int findMedian(unsigned int *v,int size)
     if (size <= 0 ) return -1;
     if (size == 1) return v[0];
 
-    int loc = round((float) size / 2.0f);
+    int loc = size / 2.0f;
     unsigned int median = 0xff000000;
 
-    for (int i = 0; i < loc; i++)
+    for (int i = 0; i <= loc; i++)
     {
         for (int j = i + 1; j < size; j++)
         {
@@ -1516,7 +1512,7 @@ unsigned int findMedian(unsigned int *v,int size)
 
     median |= (v[loc] & 0x00ff0000);
 
-    for (int i = 0; i < loc; i++)
+    for (int i = 0; i <= loc; i++)
     {
         for (int j = i + 1; j < size; j++)
         {
@@ -1531,11 +1527,11 @@ unsigned int findMedian(unsigned int *v,int size)
 
     median |= (v[loc] & 0x0000ff00);
 
-    for (int i = 0; i < loc; i++)
+    for (int i = 0; i <= loc; i++)
     {
         for (int j = i + 1; j < size; j++)
         {
-            if ((v[i] & 0x000000ff) > (v[j] & 0x000000ff00))
+            if ((v[i] & 0x000000ff) > (v[j] & 0x000000ff))
             {
                 unsigned int temp = v[i];
                 v[i] = v[j];
@@ -1569,7 +1565,7 @@ __kernel void MedianFilter2D( __global unsigned int *input, __global unsigned in
     int count = 0;
     for(int k = y - filter_offset; k <= y + filter_offset; k++) {
         for (int l = x - filter_offset; l <= x + filter_offset; l++) {
-            if(k >= 0 && l >= 0 && k < height && l < width) window[count++] = input[k * width + l];
+            if (k >= 0 && l >= 0 && k < height && l < width) window[count++] = input[k * width + l];
         }
     }
 

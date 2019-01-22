@@ -1723,6 +1723,10 @@ unsigned int *DrawFrameVR(short bleft) {
 #ifdef EXP_KERNEL
     for (int i = 0; i < MAX_SPP; i++) {
         int rayCnt = width * height;
+        short midwidth = round((float)width/2.0f), midheight = round((float)height/2.0f);
+		const float maxdist = sqrt(midwidth * midwidth + midheight * midheight);
+		const float partdist = maxdist / 3.0f;
+		const float partdepth = (float)MAX_DEPTH / 3.0f;
 #if 1
         index = 0;
 
@@ -1739,6 +1743,9 @@ unsigned int *DrawFrameVR(short bleft) {
 
         clErrchk(clSetKernelArg(kernelGen, index++, sizeof(short), (void *) &width));
         clErrchk(clSetKernelArg(kernelGen, index++, sizeof(short), (void *) &height));
+		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(short), (void *) &midwidth));
+		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(short), (void *) &midheight));
+		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(float), (void *) &maxdist));
         clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *) &rayBuffer));
         clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *) &throughputBuffer));
         clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *) &specularBounceBuffer));
@@ -1782,8 +1789,12 @@ unsigned int *DrawFrameVR(short bleft) {
 #endif
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *) &rayBuffer));
 
-            if (bleft) { clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *) &seedBufferLeft)); }
-            else clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *) &seedBufferRight));
+            if (bleft) {
+            	clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *) &seedBufferLeft));
+            }
+            else {
+            	clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *) &seedBufferRight));
+            }
 
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *) &throughputBuffer));
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *) &specularBounceBuffer));
