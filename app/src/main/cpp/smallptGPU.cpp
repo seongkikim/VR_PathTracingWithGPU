@@ -1890,12 +1890,21 @@ unsigned int *DrawFrameVR(short bleft) {
 		setStartTime = WallClockTime();
         clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(cl_mem), (void *) &pixelBufferTemp));
 
-		if (bleft) { clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(cl_mem), (void *) &pixelBufferLeft)); }
-		else clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(cl_mem), (void *) &pixelBufferRight));
+		if (bleft) {
+		    clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(cl_mem), (void *) &pixelBufferLeft));
+            clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(cl_mem), (void *) &seedBufferLeft));
+		}
+		else {
+		    clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(cl_mem), (void *) &pixelBufferRight));
+            clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(cl_mem), (void *) &seedBufferRight));
+		}
 
 		clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(short), (void *) &width));
 		clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(short), (void *) &height));
-		setTotalTime += (WallClockTime() - setStartTime);
+        clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(short), (void *) &midwidth));
+        clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(short), (void *) &midheight));
+        clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(float), (void *) &maxdist));
+        setTotalTime += (WallClockTime() - setStartTime);
 
 		kernelStartTime = WallClockTime();
 		ExecuteKernel(kernelMedian, width * height);

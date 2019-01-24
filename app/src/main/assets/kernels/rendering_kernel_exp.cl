@@ -1280,10 +1280,10 @@ __kernel void GenerateCameraRay_exp(
 
 #if 1
  const float dist = sqrt((float)(midwidth - x) * (midwidth - x) + (float)(midheight - y) * (midheight - y));
- const float prob = 1.0f - dist / maxdist;
+ const float prob = dist / maxdist;
 
  float rand = GetRandom(&seedsInput[sgid2], &seedsInput[sgid2 + 1]);
- if (rand > prob) {
+ if (rand < prob) {
   terminated[sgid] = 1;
   return;
  }
@@ -1546,14 +1546,25 @@ unsigned int findMedian(unsigned int *v,int size)
 }
 
 // __constant int WINDOW_SIZE=(int)sqrt((float)ARRAY_SIZE_ARG);
-__kernel void MedianFilter2D( __global unsigned int *input, __global unsigned int* output, short width, short height)
+__kernel void MedianFilter2D( __global unsigned int *input, __global unsigned int* output, __global unsigned int *seedsInput, short width, short height, short midwidth, short midheight, const float maxdist)
 {
-    int filter_offset = WINDOW_SIZE / 2;
-
     int gid = get_global_id(0);
 
     const int x = gid % width;
     const int y = gid / width;
+#if 1
+    const int sgid = y * width + x;
+    const int sgid2 = sgid << 1;
+    const float dist = sqrt((float)(midwidth - x) * (midwidth - x) + (float)(midheight - y) * (midheight - y));
+    const float prob = dist / maxdist;
+
+    float rand = GetRandom(&seedsInput[sgid2], &seedsInput[sgid2 + 1]);
+    if (rand < prob) {
+        output[y * width + x] = input[y * width + x];
+        return;
+    }
+#endif
+    int filter_offset = WINDOW_SIZE / 2;
 
     if(y > height || x > width) return;
 
