@@ -104,6 +104,7 @@ typedef struct {
 
 typedef struct {
     int x, y;
+    int indexDiff;
     Vec colDiff;
 } ToDiffInfo;
 #endif	/* _GEOM_H */

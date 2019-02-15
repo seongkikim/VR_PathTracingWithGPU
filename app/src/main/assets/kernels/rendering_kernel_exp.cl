@@ -673,6 +673,85 @@ __constant
  }
 }
 
+bool findDiffPos(
+#ifdef __ANDROID__
+    __global
+#else
+    __constant
+#endif
+const Shape *shapes, const short shapeCnt,
+#if (ACCELSTR == 1)
+    __constant
+
+    BVHNodeGPU *btn,
+    __constant
+
+    BVHNodeGPU *btl,
+#elif (ACCELSTR == 2)
+    __constant
+
+    KDNodeGPU *kng,
+    short kngCnt,
+    __constant
+
+    int *kn,
+    short knCnt,
+#endif
+    __global FirstHitInfo *fhi, __constant Camera *camera, Vec *ptCol)
+{
+    const Vec l0 = fhi->ptFirstHit;
+
+    Vec p0;
+    vassign(p0, camera->start);
+    //vadd(p0, cameraDiff->start, cameraDiff->end);
+    //vsmul(p0, 0.5f, p0);
+    //vnorm(p0);
+
+    Vec n;
+    vsmul(n, -1, camera->dir);
+    vnorm(n);
+
+    Vec vl;
+    vsub(vl, camera->orig, fhi->ptFirstHit);
+    vnorm(vl);
+
+    float t1;
+    bool brint = PlaneIntersect(n, p0, l0, vl, &t1);
+
+    if (!brint) return false;
+
+    float t2;
+    Ray ray;
+    unsigned int id;
+
+    Vec ve;
+    vsub(ve, fhi->ptFirstHit, camera->orig);
+    vnorm(ve);
+
+    rinit(ray, camera->orig, ve);
+    //rinit(ray, fhi[sgid].ptFirstHit, vl);
+
+    int irint = Intersect(shapes, shapeCnt,
+    #if (ACCELSTR == 1)
+            btn, btl,
+    #elif (ACCELSTR == 2)
+    kng, kngCnt,
+            kn, knCnt,
+    #endif
+            &ray, &t2, &id);
+
+    if (id != fhi->idxShape) return false;
+    //if (irint && t1 >= t2) return;
+
+    Vec p;
+
+    vsmul(p, t1, vl);
+    vadd(p, p, l0);
+
+    *ptCol = p;
+    return true;
+}
+
 void RadianceOnePathTracing(
 #ifdef __ANDROID__
 __global
@@ -701,12 +780,20 @@ __constant
  Ray *currentRay,
  __global unsigned int *seed0, __global unsigned int *seed1, 
  __global Vec *throughput, __global char *specularBounce, __global char *terminated,
- __global Result *result, __global FirstHitInfo *fhi
+ __global Result *result, __global FirstHitInfo *fhi, __constant Camera *cameraDiff, __global ToDiffInfo *tdi, __global int *currentSampleDiff
 #ifdef DEBUG_INTERSECTIONS
  , __global int *debug1,
  __global float *debug2
 #endif
  ) {
+    /*
+  if (*terminated == 1) {
+      if (depth > 0) return;
+      else {
+
+      }
+  }
+    */
   float t;
   unsigned int id = 0;
 
@@ -734,10 +821,33 @@ __constant
 
   // In the primary ray case, the current color is initialized to the last color...
   if (depth == 0) {
-        fhi->x = result->x;
-        fhi->y = result->y;
-        vassign(fhi->ptFirstHit, hitPoint);
-        fhi->idxShape = id;
+    fhi->x = result->x;
+    fhi->y = result->y;
+    vassign(fhi->ptFirstHit, hitPoint);
+    fhi->idxShape = id;
+
+    Vec p;
+    bool ret = findDiffPos(shapes, shapeCnt,
+#if (ACCELSTR == 1)
+            btn, btl,
+#elif (ACCELSTR == 2)
+            kng, kngCnt, kn, knCnt,
+#endif
+            fhi, cameraDiff, &p);
+
+    if (ret && p.x >= cameraDiff->start.x && p.x < cameraDiff->end.x && p.y >= cameraDiff->start.y && p.y < cameraDiff->end.y)
+    {
+        int xDiff = round(((p.x - cameraDiff->start.x) / (cameraDiff->end.x - cameraDiff->start.x)) * (float)(width - 1));
+        int yDiff = round(((p.y - cameraDiff->start.y) / (cameraDiff->end.y - cameraDiff->start.y)) * (float)(height - 1));
+
+        const int locPixelDiff = yDiff * width + xDiff;
+
+        tdi->x = xDiff;
+        tdi->y = yDiff;
+        tdi->indexDiff = locPixelDiff;
+
+        //atomic_inc(&currentSampleDiff[locPixelDiff]);
+    }
   }
 
   Vec normal, col;
@@ -977,7 +1087,7 @@ __constant
  int *kn, 
  short knCnt, 
 #endif
- __global Ray *rays, __global unsigned int *seedsInput, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results, __global FirstHitInfo *fhi
+ __global  Ray *rays, __global unsigned int *seedsInput, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results, __global FirstHitInfo *fhi, __global ToDiffInfo *tdi, __constant Camera *cameraDiff, __global int *currentSampleDiff
 #ifdef DEBUG_INTERSECTIONS
  , __global int *debug1,
  __global float *debug2
@@ -999,12 +1109,14 @@ __constant
 #elif (ACCELSTR == 2)
 			kng, kngCnt, kn, knCnt, 
 #endif
-			&aray, &seedsInput[sgid2], &seedsInput[sgid2 + 1], &throughput[sgid], &specularBounce[sgid], &terminated[sgid], &results[sgid], &fhi[sgid]
+			&aray, &seedsInput[sgid2], &seedsInput[sgid2 + 1], &throughput[sgid], &specularBounce[sgid], &terminated[sgid], &results[sgid], &fhi[sgid], cameraDiff, &tdi[sgid], currentSampleDiff
 #ifdef DEBUG_INTERSECTIONS
 		, debug1, debug2
 #endif
 	);
 	rays[sgid] = aray;
+
+    if (tdi[sgid].x > -1 && tdi[sgid].y > -1 && tdi[sgid].indexDiff > -1) tdi[sgid].colDiff = results[sgid].p;
  }
 }
 
@@ -1251,7 +1363,7 @@ __kernel void GenerateCameraRay_exp(
   __constant Camera *camera,
   __global unsigned int *seedsInput,
   const short width, const short height, const short midwidth, const short midheight, const float maxdist,
-  __global Ray *rays, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results, __global FirstHitInfo *fhi) {
+  __global Ray *rays, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results, __global FirstHitInfo *fhi, __global ToDiffInfo *tdi) {
  const int gid = get_global_id(0);
 
  const int x = gid % width;
@@ -1278,9 +1390,16 @@ __kernel void GenerateCameraRay_exp(
  fhi[gid].idxShape = -1;
  vclr(fhi[gid].ptFirstHit);
 
+ tdi[gid].x = -1;
+ tdi[gid].y = -1;
+ tdi[gid].indexDiff = -1;
+ vclr(tdi[gid].colDiff);
 #if 1
- const float dist = sqrt((float)(midwidth - x) * (midwidth - x) + (float)(midheight - y) * (midheight - y));
- const float prob = dist / maxdist;
+ float2 p0, p1;
+ p0.x = x, p0.y = y;
+ p1.x = midwidth, p1.y = midheight;
+ const float d = dist(p1, p0);//sqrt((float)(midwidth - x) * (midwidth - x) + (float)(midheight - y) * (midheight - y));
+ const float prob = d / maxdist;
 
  float rand = GetRandom(&seedsInput[sgid2], &seedsInput[sgid2 + 1]);
  if (rand < prob) {
@@ -1309,9 +1428,27 @@ __kernel void GenerateCameraRay_exp(
  //{ { ((*ray).o).x = (rorig).x; ((*ray).o).y = (rorig).y; ((*ray).o).z = (rorig).z; }; { ((*ray).d).x = (rdir).x; ((*ray).d).y = (rdir).y; ((*ray).d).z = (rdir).z; }; };
 }
 
+#if 0
+void atomic_add_v(volatile __global Vec *source, const Vec operand) {
+    union {
+        unsigned int u32_x, u32_y, u32_z;
+        Vec f32;
+    } next, expected, current;
+
+    vassign(current.f32, *source);
+    do {
+        vassign(expected.f32, current.f32);
+        vadd(next.f32, expected.f32, operand);
+        current.u32_x = atomic_cmpxchg((volatile __global unsigned int *)&source->x, expected.u32_x, next.u32_x);
+        current.u32_y = atomic_cmpxchg((volatile __global unsigned int *)&source->y, expected.u32_y, next.u32_y);
+        current.u32_z = atomic_cmpxchg((volatile __global unsigned int *)&source->z, expected.u32_z, next.u32_z);
+    } while( current.u32_x != expected.u32_x || current.u32_y != expected.u32_y || current.u32_z != expected.u32_z);
+}
+#endif
+
 __kernel void FillPixel_exp(
-   const short width, const short height, const short bleft,
-   __global int* currentSample, __global Vec *colors, __global int *pixels, __global Result *results) {
+   const short width, const short height, const short bleft, __global Result *results, __global ToDiffInfo *tdi,
+   __global int* currentSample, __global int* currentSampleDiff, __global Vec *colors, __global Vec *colorsDiff, __global int *pixels) {
  const int gid = get_global_id(0);
 
  const int x = results[gid].x; //gid % width;
@@ -1326,7 +1463,7 @@ __kernel void FillPixel_exp(
   vassign(colors[sgid], results[sgid].p);
   //{ (colors[sgid]).x = (r).x; (colors[sgid]).y = (r).y; (colors[sgid]).z = (r).z; };
  } else {
-  const float k1 = currentSample[sgid];
+  const float k1 = currentSample[sgid] ;
   const float k2 = 1.f / (k1 + 1.f);
 
   vmad(colors[sgid], colors[sgid], k1, results[sgid].p);
@@ -1337,7 +1474,6 @@ __kernel void FillPixel_exp(
  }
 
  currentSample[sgid]++;
- //fhi[sgid].currentColor = colors[sgid];
 
 #ifdef __ANDROID__
  const int locPixelInv = (height - y - 1) * width + x;
@@ -1356,20 +1492,55 @@ if (bleft) {
         (toInt(colors[sgid].z) << 16) | 0xff000000;
 }
 #endif
+#if 0
+    if (tdi[sgid].x == -1 && tdi[sgid].y == -1 && tdi[sgid].indexDiff) return;
+
+    int sgidDiff = tdi[sgid].indexDiff; //yDiff * width + xDiff;
+
+    if (currentSampleDiff[sgidDiff] == 0) {
+        vassign(colorsDiff[sgidDiff], tdi[sgid].colDiff);
+    } else {
+        const float k = 1.f / ((float)currentSampleDiff[sgidDiff] + 1.f);
+
+        vmad(colorsDiff[sgidDiff], (float)currentSampleDiff[sgidDiff], colorsDiff[sgidDiff], tdi[sgid].colDiff);
+        vsmul(colorsDiff[sgidDiff], k, colorsDiff[sgidDiff]);
+    }
+    atomic_inc(&currentSampleDiff[sgidDiff]);
+#endif
 }
 
-__kernel void FillDiffPixel_exp(
-        const short width, const short height, __global Result *results,
-        __global FirstHitInfo *fhi, __global const Shape *shapes, const short shapeCnt, __global Camera *cameraDiff, __global ToDiffInfo *tdi,
+__kernel void FillDiffColors_exp(const short width, const short height, __global Result *results, __global ToDiffInfo *ptdi, __global Vec *colorsDiff, __global int *currentSampleDiff) {
+    const int gid = get_global_id(0);
+
+    const int x = results[gid].x; //gid % width;
+    const int y = results[gid].y; //gid / width;
+
+    if (x < 0 || x >= width || y < 0 || y >= height) return;
+
+    const int sgid = y * width + x;
+    if (ptdi[sgid].x == -1 && ptdi[sgid].y == -1 && ptdi[sgid].indexDiff) return;
+
+    int indexDiff = ptdi[sgid].indexDiff; //yDiff * width + xDiff;
+    if (currentSampleDiff[indexDiff] <= 1) {
+        vassign(colorsDiff[indexDiff], ptdi[sgid].colDiff);
+    } else {
+        const float k = 1.f / ((float)currentSampleDiff[indexDiff] + 1.f);
+
+        vmad(colorsDiff[indexDiff], (float)currentSampleDiff[indexDiff], colorsDiff[indexDiff], ptdi[sgid].colDiff);
+        vsmul(colorsDiff[indexDiff], k, colorsDiff[indexDiff]);
+    }
+}
+
+__kernel void FillDiffPixel_exp(const short width, const short height, __constant Result *results, __constant FirstHitInfo *fhi, __global const Shape *shapes, const short shapeCnt, __constant Camera *cameraDiff,
 #if (ACCELSTR == 1)
-__constant
+    __constant
 
      BVHNodeGPU *btn,
     __constant
 
      BVHNodeGPU *btl
 #elif (ACCELSTR == 2)
-__constant
+    __constant
 
      KDNodeGPU *kng,
      short kngCnt,
@@ -1378,6 +1549,7 @@ __constant
      int *kn,
      short knCnt
 #endif
+     , __global ToDiffInfo *tdi, __global int *currentSampleDiff
 ) {
     const int gid = get_global_id(0);
 
@@ -1428,9 +1600,9 @@ __constant
 
     int irint = Intersect(shapes, shapeCnt,
 #if (ACCELSTR == 1)
-            btn, btl,
+        btn, btl,
 #elif (ACCELSTR == 2)
-    kng, kngCnt,
+        kng, kngCnt,
         kn, knCnt,
 #endif
         &ray, &t2, &id);
@@ -1451,7 +1623,10 @@ __constant
 
         tdi[sgid].x = xDiff;
         tdi[sgid].y = yDiff;
+        tdi[sgid].indexDiff = yDiff * width + xDiff;
         tdi[sgid].colDiff = results[sgid].p;
+
+        atomic_inc(&currentSampleDiff[locPixelDiff]);
 #if 0
         //lock(the_lock);
           if (currentSampleDiff[locPixelDiff] == 0) {
@@ -1546,42 +1721,62 @@ unsigned int findMedian(unsigned int *v,int size)
 }
 
 // __constant int WINDOW_SIZE=(int)sqrt((float)ARRAY_SIZE_ARG);
-__kernel void MedianFilter2D( __global unsigned int *input, __global unsigned int* output, __global unsigned int *seedsInput, short width, short height, short midwidth, short midheight, const float maxdist)
+__kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInfo *fhi, __global unsigned int *seedsInput, short width, short height, short midwidth, short midheight, const float maxdist, __global unsigned int* output)
+#if 0
+, __global unsigned int *pixels)
+#endif
 {
     int gid = get_global_id(0);
 
     const int x = gid % width;
     const int y = gid / width;
+
+    if(y > height || x > width) return;
 #if 1
     const int sgid = y * width + x;
     const int sgid2 = sgid << 1;
-    const float dist = sqrt((float)(midwidth - x) * (midwidth - x) + (float)(midheight - y) * (midheight - y));
-    const float prob = dist / maxdist;
 
+    float2 p0, p1;
+    p0.x = x, p0.y = y;
+    p1.x = midwidth, p1.y = midheight;
+    const float d = dist(p0, p1); //sqrt((float)(midwidth - x) * (midwidth - x) + (float)(midheight - y) * (midheight - y));
+    const float prob = d / maxdist;
+
+    //atomic_inc(&pixels[0]);
     float rand = GetRandom(&seedsInput[sgid2], &seedsInput[sgid2 + 1]);
-    if (rand < prob) {
+    if (rand > prob) {
+        //atomic_inc(&pixels[1]);
         output[y * width + x] = input[y * width + x];
         return;
     }
 #endif
     int filter_offset = WINDOW_SIZE / 2;
 
-    if(y > height || x > width) return;
-
     unsigned int window[WINDOW_SIZE * WINDOW_SIZE];
     for (int count = 0; count < WINDOW_SIZE * WINDOW_SIZE; count++) {
         window[count] = 0;
     }
 
-    int count = 0;
+    int count = 0, all0 = 1;
     for(int k = y - filter_offset; k <= y + filter_offset; k++) {
         for (int l = x - filter_offset; l <= x + filter_offset; l++) {
-            if (k >= 0 && l >= 0 && k < height && l < width) window[count++] = input[k * width + l];
+            if (k >= 0 && l >= 0 && k < height && l < width) {
+                if (input[k * width + l] != 0xff000000) all0 = 0;
+                window[count++] = input[k * width + l];
+            }
         }
     }
 
+    if (all0) {
+        //atomic_inc(&pixels[2]);
+        output[y * width + x] = input[y * width + x];
+        return;
+    }
+
+    //atomic_inc(&pixels[3]);
+
     //bubbleSort(window, count + 1);
-    unsigned int median = findMedian(window, count + 1);
+    unsigned int median = findMedian(window, count);
     output[y * width + x] = median; //window[count / 2];
 }
 
@@ -1615,7 +1810,7 @@ __kernel void RadiancePathTracing_expbox(
          int *kn,
          short knCnt,
 #endif
-        __global Ray *rays, __global unsigned int *seedsInput, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results
+        __constant  Ray *rays, __global unsigned int *seedsInput, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results
 #ifdef DEBUG_INTERSECTIONS
         , __global int *debug1,
          __global float *debug2
