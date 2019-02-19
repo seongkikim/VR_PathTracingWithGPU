@@ -133,6 +133,50 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
         }
     }
 
+    private void saveToRaw(int[] leftRaw, int[] rightRaw) {
+        String strFN;
+        FileOutputStream out = null;
+
+        if (leftRaw != null) {
+            strFN = Environment.getExternalStorageDirectory() + "/" + context.getPackageName() + "/images/left_image_" + new Integer(inv).toString() + ".raw";
+
+            try {
+                out = new FileOutputStream(strFN);
+                for(int i = 0; i< leftRaw.length;i++)
+                    out.write(leftRaw[i]);
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                try {
+                    if (out != null) {
+                        out.close();
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+        if (rightRaw != null) {
+            strFN = Environment.getExternalStorageDirectory() + "/" + context.getPackageName() + "/images/right_image_" + new Integer(inv).toString() + ".raw";
+
+            try {
+                out = new FileOutputStream(strFN);
+                for(int i = 0; i< rightRaw.length;i++)
+                    out.write(rightRaw[i]);
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                try {
+                    if (out != null) {
+                        out.close();
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
     @Override
     public void onSurfaceCreated(EGLConfig eglConfig) {
         Log.e("VRApp3Renderer", "Start of onSurfaceCreated");
@@ -293,29 +337,30 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
         camOrg[0] -= 1;
         reinitCamera(camOrg[0], camOrg[1], camOrg[2], camTar[0], camTar[1], camTar[2]);
 
-        int[] arr_pixels = updateRendering();
-        if (arr_pixels == null)
+        int[] arr_pixels_left = updateRendering();
+        if (arr_pixels_left == null)
         {
             Log.e("VRApp3Renderer", "null is returned!!!");
             return;
         }
 
-        Bitmap leftBmp = Bitmap.createBitmap(arr_pixels, texW, texH, Bitmap.Config.ARGB_8888);
+        Bitmap leftBmp = Bitmap.createBitmap(arr_pixels_left, texW, texH, Bitmap.Config.ARGB_8888);
 
         camOrg[0] += 2;
         reinitCamera(camOrg[0], camOrg[1], camOrg[2], camTar[0], camTar[1], camTar[2]);
 
-        arr_pixels = updateRendering();
-        if (arr_pixels == null)
+        int[] arr_pixels_right = updateRendering();
+        if (arr_pixels_right == null)
         {
             Log.e("VRApp3Renderer", "null is returned!!!");
             return;
         }
 
-        Bitmap rightBmp = Bitmap.createBitmap(arr_pixels, texW, texH, Bitmap.Config.ARGB_8888);
+        Bitmap rightBmp = Bitmap.createBitmap(arr_pixels_right, texW, texH, Bitmap.Config.ARGB_8888);
 
         if (bFile) {
             saveToFile(leftBmp, rightBmp);
+            //saveToRaw(arr_pixels_left, arr_pixels_right);
         }
 
         GLES20.glClear(GLES20.GL_DEPTH_BUFFER_BIT | GLES20.GL_COLOR_BUFFER_BIT);
@@ -377,8 +422,8 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
         Bitmap bitmap = Bitmap.createBitmap(arr_pixels, texW, texH, Bitmap.Config.ARGB_8888);
 
         if (bFile) {
-            if (eye.getType() == Eye.Type.LEFT) saveToFile(bitmap, null);
-            if (eye.getType() == Eye.Type.RIGHT) saveToFile(null, bitmap);
+            if (eye.getType() == Eye.Type.LEFT) saveToFile(bitmap, null);//saveToRaw(arr_pixels, null);
+            if (eye.getType() == Eye.Type.RIGHT) saveToFile(null, bitmap);//saveToRaw(null, arr_pixels);
         }
 
         GLES20.glClear(GLES20.GL_DEPTH_BUFFER_BIT | GLES20.GL_COLOR_BUFFER_BIT);

@@ -325,7 +325,6 @@ bool ReadTxt(char *fileName, bool bvr) {
 
 			LOGI("tri #%d normal: %.2f %.2f %.2f\n", lineIndex + addedObjects, normal.s[0], normal.s[1], normal.s[2]);
 
-
 			if (!viszero(tri->emission)) {
 				lightCnt++;
 				//                LOGI("Tri emitindo luz: %f %f %f\t%f %f %f\t%f %f %f\n", tri->p1.x, tri->p1.y, tri->p1.z, tri->p2.x, tri->p2.y, tri->p2.z, tri->p3.x, tri->p3.y, tri->p3.z);
@@ -450,16 +449,20 @@ bool ReadTxt(char *fileName, bool bvr) {
 	
 	fclose(f);
 
-	unsigned int poiCnt = 0;
+	unsigned int poiCnt = 0, sphCnt = 0, triCnt = 0;
 
 	for (int i = 0; i < objectCount; i++)
 	{
 		ObjectTemp *obj = &objects[i];
 
-		if (obj->type == SPH) shapeCnt++; 
+		if (obj->type == SPH) {
+			shapeCnt++;
+			sphCnt++;
+		}
 		else if (obj->type == TRI) 
 		{
-			shapeCnt++; 
+			shapeCnt++;
+			triCnt++;
 			poiCnt += 3;
 		}
 	}

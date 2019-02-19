@@ -134,6 +134,7 @@ bool PlaneIntersect(const Vec n, const Vec p0, const Vec l0, const Vec l, float 
         Vec p0l0;
         vsub(p0l0, p0, l0); //= p0 - l0;
         *t = vdot(p0l0, n) / denom;
+
         return (*t >= 0);
     }
 
@@ -720,6 +721,11 @@ const Shape *shapes, const short shapeCnt,
 
     if (!brint) return false;
 
+    Vec p;
+    vsmad(p, t1, vl, l0);
+
+    if (p.x < camera->start.x || p.x > camera->end.x || p.y < camera->start.y || p.y > camera->end.y || p.z < camera->start.z || p.z > camera->end.z) return false;
+
     float t2;
     Ray ray;
     unsigned int id;
@@ -743,11 +749,6 @@ const Shape *shapes, const short shapeCnt,
     if (id != fhi->idxShape) return false;
     //if (irint && t1 >= t2) return;
 
-    Vec p;
-
-    vsmul(p, t1, vl);
-    vadd(p, p, l0);
-
     *ptCol = p;
     return true;
 }
@@ -759,7 +760,7 @@ __global
 __constant
 #endif
  const Shape *shapes, const short shapeCnt, const short lightCnt,
- const short width, const short height, const short depth,
+ const short width, const short height, const short midwidth, const short midheight, const float maxdist, const short depth,
 #if (ACCELSTR == 1)
 __constant
 
@@ -825,7 +826,7 @@ __constant
     fhi->y = result->y;
     vassign(fhi->ptFirstHit, hitPoint);
     fhi->idxShape = id;
-
+#if 1
     Vec p;
     bool ret = findDiffPos(shapes, shapeCnt,
 #if (ACCELSTR == 1)
@@ -835,7 +836,7 @@ __constant
 #endif
             fhi, cameraDiff, &p);
 
-    if (ret && p.x >= cameraDiff->start.x && p.x < cameraDiff->end.x && p.y >= cameraDiff->start.y && p.y < cameraDiff->end.y)
+    if (ret) // //&& ret
     {
         int xDiff = round(((p.x - cameraDiff->start.x) / (cameraDiff->end.x - cameraDiff->start.x)) * (float)(width - 1));
         int yDiff = round(((p.y - cameraDiff->start.y) / (cameraDiff->end.y - cameraDiff->start.y)) * (float)(height - 1));
@@ -846,8 +847,9 @@ __constant
         tdi->y = yDiff;
         tdi->indexDiff = locPixelDiff;
 
-        //atomic_inc(&currentSampleDiff[locPixelDiff]);
+        atomic_inc(&currentSampleDiff[locPixelDiff]);
     }
+#endif
   }
 
   Vec normal, col;
@@ -1068,7 +1070,7 @@ __constant
  const Shape *shapes,
  const short shapeCnt,
  const short lightCnt,
- const short width, const short height,
+ const short width, const short height, const short midwidth, const short midheight, const float maxdist,
  const short curdepth,
 #if (ACCELSTR == 1)
 __constant
@@ -1103,7 +1105,7 @@ __constant
  if (terminated[sgid] != 1)
  {
 	Ray aray = rays[sgid];
-	RadianceOnePathTracing(shapes, shapeCnt, lightCnt, width, height, curdepth,
+	RadianceOnePathTracing(shapes, shapeCnt, lightCnt, width, height, midwidth, midheight, maxdist, curdepth,
 #if (ACCELSTR == 1)
 			btn, btl, 
 #elif (ACCELSTR == 2)
@@ -1116,7 +1118,25 @@ __constant
 	);
 	rays[sgid] = aray;
 
-    if (tdi[sgid].x > -1 && tdi[sgid].y > -1 && tdi[sgid].indexDiff > -1) tdi[sgid].colDiff = results[sgid].p;
+    if (tdi[sgid].x > -1 && tdi[sgid].y > -1 && tdi[sgid].indexDiff > -1) {
+        vassign(tdi[sgid].colDiff, results[sgid].p);
+        //vinit(tdi[sgid].colDiff, 1.0f, 0.0f, 0.0f);
+    }
+#if 1
+    if (curdepth < 1) return;
+
+    float2 p0, p1;
+    p0.x = x, p0.y = y;
+    p1.x = midwidth, p1.y = midheight;
+    const float d = dist(p1, p0);//sqrt((float)(midwidth - x) * (midwidth - x) + (float)(midheight - y) * (midheight - y));
+    const float prob = clamp(d / maxdist, 0.0f, 0.9f);
+
+    float rand = GetRandom(&seedsInput[sgid2], &seedsInput[sgid2 + 1]);
+    if (rand < prob) {
+        terminated[sgid] = 1;
+        return;
+    }
+#endif
  }
 }
 
@@ -1359,6 +1379,27 @@ __constant
  }
 }
 
+void SetInitRay(__constant Camera *camera, const float kcx, const float kcy, __global Ray *rays) {
+    Vec rorig;
+    rorig = camera->orig;
+    //vsmul(rorig, 0.1f, rdir);
+    //{ float k = (0.1f); { (rorig).x = k * (rdir).x; (rorig).y = k * (rdir).y; (rorig).z = k * (rdir).z; } };
+    //vadd(rorig, rorig, camera->orig);
+    //{ (rorig).x = (rorig).x + (camera->orig).x; (rorig).y = (rorig).y + (camera->orig).y; (rorig).z = (rorig).z + (camera->orig).z; }
+
+    Vec rdir;
+    vinit(rdir,
+          camera->x.x * kcx + camera->y.x * kcy + camera->dir.x,
+          camera->x.y * kcx + camera->y.y * kcy + camera->dir.y,
+          camera->x.z * kcx + camera->y.z * kcy + camera->dir.z);
+    //{ (rdir).x = camera->x.x * kcx + camera->y.x * kcy + camera->dir.x; (rdir).y = camera->x.y * kcx + camera->y.y * kcy + camera->dir.y; (rdir).z = camera->x.z * kcx + camera->y.z * kcy + camera->dir.z; };
+
+    vnorm(rdir);
+    //{ float l = 1.f / sqrt(((rdir).x * (rdir).x + (rdir).y * (rdir).y + (rdir).z * (rdir).z)); { float k = (l); { (rdir).x = k * (rdir).x; (rdir).y = k * (rdir).y; (rdir).z = k * (rdir).z; } }; };
+    rinit(*rays, rorig, rdir);
+    //{ { ((*ray).o).x = (rorig).x; ((*ray).o).y = (rorig).y; ((*ray).o).z = (rorig).z; }; { ((*ray).d).x = (rdir).x; ((*ray).d).y = (rdir).y; ((*ray).d).z = (rdir).z; }; };
+}
+
 __kernel void GenerateCameraRay_exp(
   __constant Camera *camera,
   __global unsigned int *seedsInput,
@@ -1368,7 +1409,7 @@ __kernel void GenerateCameraRay_exp(
 
  const int x = gid % width;
  const int y = gid / width;
-
+  
  const int sgid = y * width + x;
  const int sgid2 = sgid << 1;
 
@@ -1380,20 +1421,21 @@ __kernel void GenerateCameraRay_exp(
  const float kcx = (x + r1) * invWidth - .5f;
  const float kcy = (y + r2) * invHeight - .5f;
 
- vinit(throughput[gid], 1.f, 1.f, 1.f);
- specularBounce[gid] = 1;
- terminated[gid] = 0;
- results[gid].x = x, results[gid].y = y;
- vclr(results[gid].p);
+ vinit(throughput[sgid], 1.f, 1.f, 1.f);
+ specularBounce[sgid] = 1;
+ terminated[sgid] = 0;
+ results[sgid].x = x, results[sgid].y = y;
+ vclr(results[sgid].p);
 
- fhi[gid].x = x, fhi[gid].y = y;
- fhi[gid].idxShape = -1;
- vclr(fhi[gid].ptFirstHit);
+ fhi[sgid].x = x, fhi[sgid].y = y;
+ fhi[sgid].idxShape = -1;
+ vclr(fhi[sgid].ptFirstHit);
 
- tdi[gid].x = -1;
- tdi[gid].y = -1;
- tdi[gid].indexDiff = -1;
- vclr(tdi[gid].colDiff);
+ tdi[sgid].x = -1;
+ tdi[sgid].y = -1;
+ tdi[sgid].indexDiff = -1;
+ vclr(tdi[sgid].colDiff);
+#if 0
 #if 1
  float2 p0, p1;
  p0.x = x, p0.y = y;
@@ -1406,26 +1448,54 @@ __kernel void GenerateCameraRay_exp(
   terminated[sgid] = 1;
   return;
  }
+ /*float curx = x, cury = y, diffx = ((float) midwidth - curx) / 10.0f, diffy = ((float) midheight - cury) / 10.0f;
+ float2 p0, p1;
+
+ for(int i = 0; i < 10; i++) {
+	 p0.x = curx, p0.y = cury;
+	 p1.x = midwidth, p1.y = midheight;
+	 const float d = dist(p1, p0);//sqrt((float)(midwidth - x) * (midwidth - x) + (float)(midheight - y) * (midheight - y));
+	 const float prob = d / maxdist;
+
+	 float rand = GetRandom(&seedsInput[sgid2], &seedsInput[sgid2 + 1]);
+	 if (rand < prob) {
+	    curx += diffx;
+	    cury += diffy;
+	 }
+	 else {
+	    results[gid].x = curx, results[gid].y = cury;
+	    break;
+	 }
+ }*/
+#else
+    // 3 parts filtering according to the gaze point
+    float nparts = 3.0f;
+    float2 p0, p1;
+    p0.x = x, p0.y = y;
+    p1.x = midwidth, p1.y = midheight;
+    const float d = dist(p0, p1); //sqrt((float)(midwidth - x) * (midwidth - x) + (float)(midheight - y) * (midheight - y));
+    const float per = maxdist / nparts;
+    float rand = GetRandom(&seedsInput[sgid2], &seedsInput[sgid2 + 1]);
+
+    if (d >= 0 && d < per) {
+        if (rand < (1.0f / 3.0f)) {
+            terminated[sgid] = 1;
+            return;
+        }
+    }
+    else if (d >= per && d < 2.0f * per) {
+        if (rand < (2.0f / 3.0f)) {
+            terminated[sgid] = 1;
+            return;
+        }
+    }
+    else {
+        terminated[sgid] = 1;
+        return;
+    }
 #endif
-
- Vec rorig;
- rorig = camera->orig;
- //vsmul(rorig, 0.1f, rdir);
- //{ float k = (0.1f); { (rorig).x = k * (rdir).x; (rorig).y = k * (rdir).y; (rorig).z = k * (rdir).z; } };
- //vadd(rorig, rorig, camera->orig);
- //{ (rorig).x = (rorig).x + (camera->orig).x; (rorig).y = (rorig).y + (camera->orig).y; (rorig).z = (rorig).z + (camera->orig).z; }
-
- Vec rdir;
- vinit(rdir,
-    camera->x.x * kcx + camera->y.x * kcy + camera->dir.x,
- 	camera->x.y * kcx + camera->y.y * kcy + camera->dir.y,
- 	camera->x.z * kcx + camera->y.z * kcy + camera->dir.z);
- //{ (rdir).x = camera->x.x * kcx + camera->y.x * kcy + camera->dir.x; (rdir).y = camera->x.y * kcx + camera->y.y * kcy + camera->dir.y; (rdir).z = camera->x.z * kcx + camera->y.z * kcy + camera->dir.z; };
-
- vnorm(rdir);
- //{ float l = 1.f / sqrt(((rdir).x * (rdir).x + (rdir).y * (rdir).y + (rdir).z * (rdir).z)); { float k = (l); { (rdir).x = k * (rdir).x; (rdir).y = k * (rdir).y; (rdir).z = k * (rdir).z; } }; };
- rinit(rays[gid], rorig, rdir);
- //{ { ((*ray).o).x = (rorig).x; ((*ray).o).y = (rorig).y; ((*ray).o).z = (rorig).z; }; { ((*ray).d).x = (rdir).x; ((*ray).d).y = (rdir).y; ((*ray).d).z = (rdir).z; }; };
+#endif
+ SetInitRay(camera, kcx, kcy, &rays[sgid]);
 }
 
 #if 0
@@ -1721,21 +1791,24 @@ unsigned int findMedian(unsigned int *v,int size)
 }
 
 // __constant int WINDOW_SIZE=(int)sqrt((float)ARRAY_SIZE_ARG);
-__kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInfo *fhi, __global unsigned int *seedsInput, short width, short height, short midwidth, short midheight, const float maxdist, __global unsigned int* output)
+__kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInfo *fhi, __global unsigned int *seedsInput, short width, short height, short midwidth, short midheight, const float maxdist, __global unsigned int* output
 #if 0
-, __global unsigned int *pixels)
+    , __global unsigned int *pixels
 #endif
+    )
 {
     int gid = get_global_id(0);
 
     const int x = gid % width;
     const int y = gid / width;
 
-    if(y > height || x > width) return;
-#if 1
+    if(x < 0 || x >= width || y < 0 || y >= height) return;
+
     const int sgid = y * width + x;
     const int sgid2 = sgid << 1;
-
+#if 1
+#if 1
+    // probability-based filtering according to the gaze point
     float2 p0, p1;
     p0.x = x, p0.y = y;
     p1.x = midwidth, p1.y = midheight;
@@ -1749,6 +1822,37 @@ __kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInf
         output[y * width + x] = input[y * width + x];
         return;
     }
+#else
+    // 3 parts filtering according to the gaze point
+    float nparts = 3.0f;
+    float2 p0, p1;
+    p0.x = x, p0.y = y;
+    p1.x = midwidth, p1.y = midheight;
+    const float d = dist(p0, p1); //sqrt((float)(midwidth - x) * (midwidth - x) + (float)(midheight - y) * (midheight - y));
+    const float per = maxdist / nparts;
+    float rand = GetRandom(&seedsInput[sgid2], &seedsInput[sgid2 + 1]);
+#if 0
+    atomic_inc(&pixels[0]);
+#endif
+    if (d >= 0 && d < per) {
+        if (rand > (1.0f / 3.0f)) {
+#if 0
+            atomic_inc(&pixels[1]);
+#endif
+            output[y * width + x] = input[y * width + x];
+            return;
+        }
+    }
+    else if (d >= per && d < 2.0f * per) {
+        if (rand > (2.0f / 3.0f)) {
+#if 0
+            atomic_inc(&pixels[1]);
+#endif
+            output[y * width + x] = input[y * width + x];
+            return;
+        }
+    }
+#endif
 #endif
     int filter_offset = WINDOW_SIZE / 2;
 
@@ -1768,13 +1872,15 @@ __kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInf
     }
 
     if (all0) {
-        //atomic_inc(&pixels[2]);
+#if 0
+        atomic_inc(&pixels[2]);
+#endif
         output[y * width + x] = input[y * width + x];
         return;
     }
-
-    //atomic_inc(&pixels[3]);
-
+#if 0
+    atomic_inc(&pixels[3]);
+#endif
     //bubbleSort(window, count + 1);
     unsigned int median = findMedian(window, count);
     output[y * width + x] = median; //window[count / 2];

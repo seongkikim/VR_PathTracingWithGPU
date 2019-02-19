@@ -1768,14 +1768,17 @@ unsigned int *DrawFrameVR(short bleft) {
     int rayCnt = width * height;
     short midwidth = round((float)width/2.0f), midheight = round((float)height/2.0f);
     const float maxdist = sqrt(midwidth * midwidth + midheight * midheight);
-
+#if 1
     rwStartTime = WallClockTime();
     clErrchk(clEnqueueWriteBuffer(commandQueue, colorBuffer, CL_TRUE, 0, sizeof(Vec) * pixelCount, colors, 0, NULL, NULL));
     clErrchk(clEnqueueWriteBuffer(commandQueue, currentSampleBuffer, CL_TRUE, 0, sizeof(int) * pixelCount, pcurrentSample, 0, NULL, NULL));
     rwTotalTime += (WallClockTime() - rwStartTime);
-
+#endif
 #ifdef EXP_KERNEL
     for (int i = 0; i < MAX_SPP; i++) {
+#if 0
+        int no_col_pixels = 0;
+#endif
 #if 1
         index = 0;
 
@@ -1820,6 +1823,9 @@ unsigned int *DrawFrameVR(short bleft) {
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *) &lightCnt));
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *) &width));
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *) &height));
+            clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *) &midwidth));
+            clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *) &midheight));
+            clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(float), (void *) &maxdist));
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *) &j));
 #if (ACCELSTR == 1)
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *)&btnBuffer));
@@ -1846,6 +1852,15 @@ unsigned int *DrawFrameVR(short bleft) {
             ExecuteKernel(kernelRadiance, rayCnt);
             //clFinish(commandQueue);
             kernelTotalTime += (WallClockTime() - kernelStartTime);
+#if 0
+            if (j == 0) {
+                clErrchk(clEnqueueReadBuffer(commandQueue, terminatedBuffer, CL_TRUE, 0, sizeof(char) *  width * height, terminated, 0, NULL, NULL));
+
+                for (register int index = 0; index < width * height; index++) {
+                    if (!terminated[index]) no_col_pixels++;
+                }
+            }
+#endif
 #if 0
             //clErrchk(clEnqueueReadBuffer(commandQueue, rayBuffer, CL_TRUE, 0, sizeof(Ray) *  rayCnt, ray, 0, NULL, NULL));
             //clErrchk(clEnqueueReadBuffer(commandQueue, seedBuffer, CL_TRUE, 0, sizeof(unsigned int) *  rayCnt * 2, seeds, 0, NULL, NULL));
@@ -1926,7 +1941,7 @@ unsigned int *DrawFrameVR(short bleft) {
         cl_mem npixelsBuffer = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_ALLOC_HOST_PTR, 4 * sizeof(unsigned int), NULL, &status);
         clErrchk(clEnqueueWriteBuffer(commandQueue, npixelsBuffer, CL_TRUE, 0, sizeof(unsigned int) * 4, npixels, 0, NULL, NULL));
 #endif
-
+#if 1
         setStartTime = WallClockTime();
         clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(cl_mem), (void *) &pixelBufferTemp));
         clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(cl_mem), (void *) &fhiBuffer));
@@ -1946,6 +1961,7 @@ unsigned int *DrawFrameVR(short bleft) {
         ExecuteKernel(kernelMedian, width * height);
         //clFinish(commandQueue);
         kernelTotalTime += (WallClockTime() - kernelStartTime);
+#endif
 #if 0
         clErrchk(clEnqueueReadBuffer(commandQueue, npixelsBuffer, CL_TRUE, 0, sizeof(unsigned int) * 4, npixels, 0, NULL, NULL));
         LOGI("Total pixels: %u, Skipped pixels (Probability): %u, Skipped pixels (Zero): %u, Processed pixels: %u", npixels[0], npixels[1], npixels[2], npixels[3]);
@@ -1967,12 +1983,13 @@ unsigned int *DrawFrameVR(short bleft) {
         //clFinish(commandQueue);
         kernelTotalTime += (WallClockTime() - kernelStartTime);
 #else
+#if 1
         rwStartTime = WallClockTime();
         clErrchk(clEnqueueReadBuffer(commandQueue, tdiBuffer, CL_TRUE, 0, sizeof(ToDiffInfo) * width * height, ptdi, 0, NULL, NULL));
         clErrchk(clEnqueueReadBuffer(commandQueue, colorBufferDiff, CL_TRUE, 0, sizeof(Vec) * pixelCount, colorsDiff, 0, NULL, NULL));
         clErrchk(clEnqueueReadBuffer(commandQueue, currentSampleBufferDiff, CL_TRUE, 0, sizeof(int) * pixelCount, pcurrentSampleDiff, 0, NULL, NULL));
         rwTotalTime += (WallClockTime() - rwStartTime);
-#if 1
+
         int count = 0;
 //#pragma omp parallel for num_threads(8)
         for(register int index = 0; index < width * height; index++) {
@@ -1989,7 +2006,9 @@ unsigned int *DrawFrameVR(short bleft) {
             }
             count++;
         }
-        LOGI("Shared Pixels: %d, %f", count, (float)count/(float)(width * height) * 100.0f);
+#if 0
+        LOGI("Shared Pixels: %d", count);
+#endif
 #endif
 #endif
 #endif
@@ -2180,17 +2199,17 @@ unsigned int *DrawFrameVR(short bleft) {
         const float invHeight = 1.f / (float)height;
 
 //#pragma omp parallel for
-        for(int yRight = 0; yRight < height; yRight++) {
-            for (int xRight = 0; xRight < width; xRight++) {
-                const int i = yRight * width + xRight;
+        for(int yDiff = 0; yDiff < height; yDiff++) {
+            for (int xDiff = 0; xDiff < width; xDiff++) {
+                const int i = yDiff * width + xDiff;
 
-                const int locPixelRight = (height - yRight - 1) * width + xRight;
+                const int locPixelRight = (height - yDiff - 1) * width + xDiff;
                 const int i2 = i << 1;
 
                 const float r1 = GetRandom(&seedsRight[i2], &seedsRight[i2 + 1]) - .5f;
                 const float r2 = GetRandom(&seedsRight[i2], &seedsRight[i2 + 1]) - .5f;
-                const float kcx = (xRight + r1) * invWidth - .5f;
-                const float kcy = (yRight + r2) * invHeight - .5f;
+                const float kcx = (xDiff + r1) * invWidth - .5f;
+                const float kcy = (yDiff + r2) * invHeight - .5f;
 
                 Vec rdir;
                 vinit(rdir,
