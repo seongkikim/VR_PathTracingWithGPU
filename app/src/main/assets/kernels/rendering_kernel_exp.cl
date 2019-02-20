@@ -1791,6 +1791,39 @@ unsigned int findMedian(unsigned int *v,int size)
 }
 
 // __constant int WINDOW_SIZE=(int)sqrt((float)ARRAY_SIZE_ARG);
+__kernel void GaussianFilter2D( __global unsigned int *input, __global FirstHitInfo *fhi, __global unsigned int *seedsInput, short width, short height, short midwidth, short midheight, const float maxdist, __global unsigned int* output
+#if 0
+, __global unsigned int *pixels
+#endif
+)
+{
+    int gid = get_global_id(0);
+
+    const int x = gid % width;
+    const int y = gid / width;
+
+    float newValue1 = 0.0f, newValue2 = 0.0f, newValue3 = 0.0f, sum = 0.0f;
+    int MaskGaussian[5][5] = { {1, 4, 6, 4, 1}, {4, 16, 24, 16, 4}, {6, 24, 36, 24, 6}, {4, 16, 24, 16, 4}, {1, 4, 6, 4, 1} };
+
+    for(int mr = 0; mr < 5; mr++)
+    {
+        for(int mc = 0; mc < 5; mc++)
+        {
+            if ((x + mc - 1) <= 0 || (x + mc - 1) >= width) continue;
+            if ((y + mr - 1) <= 0 || (y + mr - 1) >= height) continue;
+
+            newValue1 += (MaskGaussian[mr][mc] * ((input[(y + mr - 1) * width + (x + mc - 1)] & 0x00ff0000) >> 16));
+            newValue2 += (MaskGaussian[mr][mc] * ((input[(y + mr - 1) * width + (x + mc - 1)] & 0x0000ff00) >> 8));
+            newValue3 += (MaskGaussian[mr][mc] * ((input[(y + mr - 1) * width + (x + mc - 1)] & 0x000000ff)));
+
+            sum += MaskGaussian[mr][mc];
+        }
+    }
+
+    output[y * width + x] = 0xff000000 | ((unsigned int)round(newValue1 / sum) << 16) | ((unsigned int)round(newValue2 / sum) << 8) | ((unsigned int)round(newValue3 / sum));
+}
+
+// __constant int WINDOW_SIZE=(int)sqrt((float)ARRAY_SIZE_ARG);
 __kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInfo *fhi, __global unsigned int *seedsInput, short width, short height, short midwidth, short midheight, const float maxdist, __global unsigned int* output
 #if 0
     , __global unsigned int *pixels

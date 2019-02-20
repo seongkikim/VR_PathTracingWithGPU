@@ -771,6 +771,7 @@ void SetUpOpenCL() {
     clErrchk(status);*/
 
 	kernelMedian = clCreateKernel(program, "MedianFilter2D", &status);
+    //kernelMedian = clCreateKernel(program, "GaussianFilter2D", &status);
 	clErrchk(status);
 #ifdef CPU_PARTRENDERING
     kernelGenBox = clCreateKernel(program, "GenerateCameraRay_expbox", &status);
@@ -1929,7 +1930,9 @@ unsigned int *DrawFrameVR(short bleft) {
 
 		kernelStartTime = WallClockTime();
 		ExecuteKernel(kernelFill, width * height);
-		//clFinish(commandQueue);
+#if 1
+		clFinish(commandQueue);
+#endif
 		kernelTotalTime += (WallClockTime() - kernelStartTime);
 #if 1
         index = 0;
