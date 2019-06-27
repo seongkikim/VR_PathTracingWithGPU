@@ -1,4 +1,4 @@
-package gamemobile.kmu.ac.kr.vrapp1;
+package gamemobile.kmu.ac.kr.vrapp3;
 
 import org.junit.Test;
 
