@@ -199,7 +199,7 @@ bool intersection_bound_test(const Ray r, Bound bound
     t_max = min(t_xmax, min(t_ymax, t_zmax));
 	
 #ifdef DEBUG_INTERSECTIONS
-    if (get_global_id(0) == 0) {
+    if (get_global_id(0) + get_global_id(1) * width == 0) {
         debug2[0] = t_min, debug2[1] = t_max, debug2[2] = t_xmin, debug2[3] = t_xmax, debug2[4] = t_ymin, debug2[5] = t_ymax, debug2[6] = t_zmin, debug2[7] = t_zmax;
         debug2[8] = x_a, debug2[9] = y_a, debug2[10] = z_a;
         debug2[11] = bound.min_x, debug2[12] = bound.max_x, debug2[13] = bound.min_y, debug2[14] = bound.max_y, debug2[15] = bound.min_z, debug2[16] = bound.max_z;
@@ -286,8 +286,8 @@ __constant
 	}
 	return intersected;
 #ifdef DEBUG_INTERSECTIONS
-	debug1[get_global_id(0)] = *id;
-	debug2[get_global_id(0)] = *t;
+	debug1[get_global_id(0) + get_global_id(1) * width] = *id;
+	debug2[get_global_id(0) + get_global_id(1) * width] = *t;
 #endif
 	return (*t < inf);
 #elif (ACCELSTR == 1)
@@ -753,6 +753,89 @@ const Shape *shapes, const short shapeCnt,
     return true;
 }
 
+bool findSpecRefrPos(
+#ifdef __ANDROID__
+        __global
+#else
+        __constant
+#endif
+const Shape *shapes, const short shapeCnt,
+#if (ACCELSTR == 1)
+__constant
+
+    BVHNodeGPU *btn,
+    __constant
+
+    BVHNodeGPU *btl,
+#elif (ACCELSTR == 2)
+__constant
+
+    KDNodeGPU *kng,
+    short kngCnt,
+    __constant
+
+    int *kn,
+    short knCnt,
+#endif
+        __global FirstHitInfo *fhi, __constant Camera *cameraOrg, __constant Camera *cameraDiff, Vec *ptCol)
+{
+    const Vec l0 = fhi->ptFirstHit;
+
+    Vec p0;
+    vassign(p0, cameraDiff->start);
+    //vadd(p0, cameraDiff->start, cameraDiff->end);
+    //vsmul(p0, 0.5f, p0);
+    //vnorm(p0);
+
+    Vec l;
+    vsub(l, l0, cameraOrg->orig);
+
+    Vec n;
+    vsmul(n, -1, cameraDiff->dir);
+    vnorm(n);
+
+    Vec r;
+    vsmul(r, 2.0f * vdot(n, l), n);
+    vsub(r, r, l);
+    vnorm(r);
+
+    float t1;
+    bool brint = PlaneIntersect(n, p0, l0, r, &t1);
+
+    if (!brint) return false;
+
+    Vec p;
+    vsmad(p, t1, r, l0);
+
+    if (p.x < cameraDiff->start.x || p.x > cameraDiff->end.x || p.y < cameraDiff->start.y || p.y > cameraDiff->end.y || p.z < cameraDiff->start.z || p.z > cameraDiff->end.z) return false;
+
+    float t2;
+    Ray ray;
+    unsigned int id;
+
+    Vec ve;
+    vsub(ve, fhi->ptFirstHit, cameraDiff->orig);
+    vnorm(ve);
+
+    rinit(ray, cameraDiff->orig, ve);
+    //rinit(ray, fhi[sgid].ptFirstHit, vl);
+
+    int irint = Intersect(shapes, shapeCnt,
+    #if (ACCELSTR == 1)
+            btn, btl,
+    #elif (ACCELSTR == 2)
+    kng, kngCnt,
+                kn, knCnt,
+    #endif
+        &ray, &t2, &id);
+
+    if (id != fhi->idxShape) return false;
+    //if (irint && t1 >= t2) return;
+
+    *ptCol = p;
+    return true;
+}
+
 void RadianceOnePathTracing(
 #ifdef __ANDROID__
 __global
@@ -781,7 +864,7 @@ __constant
  Ray *currentRay,
  __global unsigned int *seed0, __global unsigned int *seed1, 
  __global Vec *throughput, __global char *specularBounce, __global char *terminated,
- __global Result *result, __global FirstHitInfo *fhi, __constant Camera *cameraDiff, __global ToDiffInfo *tdi, __global int *currentSampleDiff
+ __global Result *result, __global FirstHitInfo *fhi, __constant Camera *cameraOrg, __constant Camera *cameraDiff, __global ToDiffInfo *tdi, __global int *currentSampleDiff
 #ifdef DEBUG_INTERSECTIONS
  , __global int *debug1,
  __global float *debug2
@@ -826,15 +909,29 @@ __constant
     fhi->y = result->y;
     vassign(fhi->ptFirstHit, hitPoint);
     fhi->idxShape = id;
+
 #if 1
     Vec p;
-    bool ret = findDiffPos(shapes, shapeCnt,
+    bool ret;
+
+    if (shapes[id].refl == DIFF)
+        ret = findDiffPos(shapes, shapeCnt,
 #if (ACCELSTR == 1)
             btn, btl,
 #elif (ACCELSTR == 2)
             kng, kngCnt, kn, knCnt,
 #endif
             fhi, cameraDiff, &p);
+    else
+        ret = findSpecRefrPos(shapes, shapeCnt,
+#if (ACCELSTR == 1)
+        btn, btl,
+#elif (ACCELSTR == 2)
+        kng, kngCnt, kn, knCnt,
+#endif
+            fhi, cameraOrg, cameraDiff, &p);
+
+    tdi->refl = shapes[id].refl;
 
     if (ret) // //&& ret
     {
@@ -1089,13 +1186,13 @@ __constant
  int *kn, 
  short knCnt, 
 #endif
- __global  Ray *rays, __global unsigned int *seedsInput, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results, __global FirstHitInfo *fhi, __global ToDiffInfo *tdi, __constant Camera *cameraDiff, __global int *currentSampleDiff
+ __global  Ray *rays, __global unsigned int *seedsInput, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results, __global FirstHitInfo *fhi, __global ToDiffInfo *tdi, __constant Camera *cameraOrg, __constant Camera *cameraDiff, __global int *currentSampleDiff
 #ifdef DEBUG_INTERSECTIONS
  , __global int *debug1,
  __global float *debug2
 #endif
  ) {
- const int gid = get_global_id(0);
+ const int gid = get_global_id(0) + get_global_id(1) * width;
 
  const int x = results[gid].x;//gid % width; //
  const int y = results[gid].y;//gid / width; //
@@ -1111,19 +1208,19 @@ __constant
 #elif (ACCELSTR == 2)
 			kng, kngCnt, kn, knCnt, 
 #endif
-			&aray, &seedsInput[sgid2], &seedsInput[sgid2 + 1], &throughput[sgid], &specularBounce[sgid], &terminated[sgid], &results[sgid], &fhi[sgid], cameraDiff, &tdi[sgid], currentSampleDiff
+			&aray, &seedsInput[sgid2], &seedsInput[sgid2 + 1], &throughput[sgid], &specularBounce[sgid], &terminated[sgid], &results[sgid], &fhi[sgid], cameraOrg, cameraDiff, &tdi[sgid], currentSampleDiff
 #ifdef DEBUG_INTERSECTIONS
 		, debug1, debug2
 #endif
 	);
 	rays[sgid] = aray;
 
-    if (tdi[sgid].x > -1 && tdi[sgid].y > -1 && tdi[sgid].indexDiff > -1) {
+    if (tdi[sgid].x > -1 && tdi[sgid].y > -1 && tdi[sgid].indexDiff > -1) { // && tdi[sgid].refl == DIFF
         vassign(tdi[sgid].colDiff, results[sgid].p);
         //vinit(tdi[sgid].colDiff, 1.0f, 0.0f, 0.0f);
     }
 #if 1
-    if (curdepth < 1) return;
+    if (curdepth < 1 || tdi[sgid].refl == REFR) return;
 
     float2 p0, p1;
     p0.x = x, p0.y = y;
@@ -1405,7 +1502,7 @@ __kernel void GenerateCameraRay_exp(
   __global unsigned int *seedsInput,
   const short width, const short height, const short midwidth, const short midheight, const float maxdist,
   __global Ray *rays, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results, __global FirstHitInfo *fhi, __global ToDiffInfo *tdi) {
- const int gid = get_global_id(0);
+ const int gid = get_global_id(0) + get_global_id(1) * width;
 
  const int x = gid % width;
  const int y = gid / width;
@@ -1519,7 +1616,7 @@ void atomic_add_v(volatile __global Vec *source, const Vec operand) {
 __kernel void FillPixel_exp(
    const short width, const short height, const short bleft, __global Result *results, __global ToDiffInfo *tdi,
    __global int* currentSample, __global int* currentSampleDiff, __global Vec *colors, __global Vec *colorsDiff, __global int *pixels) {
- const int gid = get_global_id(0);
+ const int gid = get_global_id(0) + get_global_id(1) * width;
 
  const int x = results[gid].x; //gid % width;
  const int y = results[gid].y; //gid / width;
@@ -1580,7 +1677,7 @@ if (bleft) {
 }
 
 __kernel void FillDiffColors_exp(const short width, const short height, __global Result *results, __global ToDiffInfo *ptdi, __global Vec *colorsDiff, __global int *currentSampleDiff) {
-    const int gid = get_global_id(0);
+    const int gid = get_global_id(0) + get_global_id(1) * width;
 
     const int x = results[gid].x; //gid % width;
     const int y = results[gid].y; //gid / width;
@@ -1621,7 +1718,7 @@ __kernel void FillDiffPixel_exp(const short width, const short height, __constan
 #endif
      , __global ToDiffInfo *tdi, __global int *currentSampleDiff
 ) {
-    const int gid = get_global_id(0);
+    const int gid = get_global_id(0) + get_global_id(1) * width;
 
     const int x = results[gid].x; //gid % width;
     const int y = results[gid].y; //gid / width;
@@ -1797,7 +1894,7 @@ __kernel void GaussianFilter2D( __global unsigned int *input, __global FirstHitI
 #endif
 )
 {
-    int gid = get_global_id(0);
+    int gid = get_global_id(0) + get_global_id(1) * width;
 
     const int x = gid % width;
     const int y = gid / width;
@@ -1830,7 +1927,7 @@ __kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInf
 #endif
     )
 {
-    int gid = get_global_id(0);
+    int gid = get_global_id(0) + get_global_id(1) * width;
 
     const int x = gid % width;
     const int y = gid / width;
@@ -1955,7 +2052,7 @@ __kernel void RadiancePathTracing_expbox(
          __global float *debug2
 #endif
 ) {
-    const int gid = get_global_id(0);
+    const int gid = get_global_id(0) + get_global_id(1) * width;
     if (gid >= bwidth * bheight) return ;
 
     const short x = results[gid].x - startx;//gid % width; //
@@ -1991,7 +2088,7 @@ __kernel void GenerateCameraRay_expbox(
     const short bwidth, const short bheight,
     const short twidth, const short theight,
     __global Ray *rays, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results) {
-    const int gid = get_global_id(0);
+    const int gid = get_global_id(0) + get_global_id(1) * width;
     if (gid >= bwidth * bheight) return ;
 
     const short x = (gid % bwidth) + startx;
@@ -2036,7 +2133,7 @@ __kernel void FillPixel_expbox(
     const short startx, const short starty,
     const short bwidth, const short bheight, const short currentSample,
     __global Vec *colors, __global Result *results, __global int *pixels) {
-    const int gid = get_global_id(0);
+    const int gid = get_global_id(0) + get_global_id(1) * width;
     if (gid >= bwidth * bheight) return ;
     
     const short x = results[gid].x - startx; //gid % width;

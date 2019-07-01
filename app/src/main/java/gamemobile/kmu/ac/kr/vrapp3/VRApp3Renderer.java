@@ -3,10 +3,8 @@ package gamemobile.kmu.ac.kr.vrapp3;
 import android.content.Context;
 import android.content.res.AssetManager;
 import android.graphics.Bitmap;
-import android.opengl.GLES10;
 import android.opengl.GLES20;
 import android.opengl.GLUtils;
-import android.opengl.Matrix;
 import android.os.Environment;
 import android.util.Log;
 
@@ -22,7 +20,6 @@ import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 
 import javax.microedition.khronos.egl.EGLConfig;
-import javax.microedition.khronos.opengles.GL10;
 
 /**
  * Created by user on 2018-03-22.
@@ -30,7 +27,7 @@ import javax.microedition.khronos.opengles.GL10;
 
 public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Renderer {
     /** Size of the position data in elements. */
-    private final int mBytesPerFloat = 4, mPositionDataSize = 3, mTexCoordinateDataSize = 2, texW = 480, texH = 405;
+    private final int mBytesPerFloat = 4, mPositionDataSize = 3, mTexCoordinateDataSize = 2, texW = 640, texH = 480;
 
     /** Store our model data in a float buffer. */
     private final FloatBuffer mScreenPosition, mTextureCoordinate;
@@ -302,8 +299,8 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
 
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mTextures[0]);
 
-        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR);
-        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);
+        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST);
+        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST);
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
         //GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST);
@@ -311,8 +308,8 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
 
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mTextures[1]);
 
-        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR);
-        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);
+        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST);
+        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST);
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
         //GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST);
@@ -320,7 +317,7 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
 
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
 
-        camOrigTarg = initSmallPtGPU(1, 128, "kernels/rendering_kernel_exp.cl", texW, texH, "scenes/obj-model.txt", Environment.getExternalStorageDirectory() + "/" + context.getPackageName(), context.getAssets(), true);
+        camOrigTarg = initSmallPtGPU(1, 0, "kernels/rendering_kernel_exp.cl", texW, texH, "scenes/obj-model.txt", Environment.getExternalStorageDirectory() + "/" + context.getPackageName(), context.getAssets(), true);
 
         Log.d("VRApp3Renderer", "End of onSurfaceCreated");
     }
@@ -400,6 +397,7 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
     }
 
     public void onDrawEye(Eye eye) {
+        if (inv >= 200) return;
         String strEyeType = new String();
 
         boolean bleft = false;
@@ -455,11 +453,11 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
 
     @Override
     public void onSurfaceChanged(int width, int height) {
-        Log.e("VRApp3Renderer", "Start of onSurfaceChanged");
+        Log.e("VRApp3Renderer", "Start of onSurfaceChanged" + width + ", " + height);
 
         try {
             // Specifies transformation from normalized device coordinates to window coordinates
-            GLES20.glViewport(0, 0, width / 2, height);
+            GLES20.glViewport(0, 0, width, height);
         } catch (Exception e) {
             // TODO Auto-generated catch block
             Log.d("VRApp3Renderer",e.getMessage());

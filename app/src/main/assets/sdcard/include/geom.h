@@ -58,7 +58,7 @@ typedef struct {
 #define rassign(a, b) { vassign((a).o, (b).o); vassign((a).d, (b).d); }
 
 enum Refl {
-	DIFF, SPEC, REFR
+	DIFF = 0, SPEC, REFR
 };
 
 typedef struct {
@@ -106,5 +106,6 @@ typedef struct {
     int x, y;
     int indexDiff;
     Vec colDiff;
+	enum Refl refl;
 } ToDiffInfo;
 #endif	/* _GEOM_H */
