@@ -440,7 +440,6 @@ bool ReadTxt(char *fileName, bool bvr) {
 
 			addedObjects += numTriangles;
 		}
-
 	}
 
 	objectCount += addedObjects;
@@ -482,8 +481,8 @@ bool ReadTxt(char *fileName, bool bvr) {
 			shapes[curShape].e = obj->emission;
 			shapes[curShape].c = obj->color;
 			
-			if (obj->materialId == LAMBERTIAN) shapes[curShape].refl = DIFF;
-			else if (obj->materialId == CONDUCTOR) shapes[curShape].refl = SPEC;
+			if (obj->materialId == LAMBERTIAN || obj->materialId == MATTE) shapes[curShape].refl = DIFF;
+			else if (obj->materialId == CONDUCTOR || obj->materialId == METAL || obj->materialId == PLASTIC) shapes[curShape].refl = SPEC;
 			else if (obj->materialId == DIELECTRIC) shapes[curShape].refl = REFR;
 			else shapes[curShape].refl = DIFF;
 
@@ -499,10 +498,10 @@ bool ReadTxt(char *fileName, bool bvr) {
 			shapes[curShape].e = obj->emission;
 			shapes[curShape].c = obj->color;
 
-			if (obj->materialId == LAMBERTIAN) shapes[curShape].refl = DIFF;
-			else if (obj->materialId == CONDUCTOR) shapes[curShape].refl = SPEC;
-			else if (obj->materialId == DIELECTRIC) shapes[curShape].refl = REFR;
-			else shapes[curShape].refl = DIFF;
+            if (obj->materialId == LAMBERTIAN || obj->materialId == MATTE) shapes[curShape].refl = DIFF;
+            else if (obj->materialId == CONDUCTOR || obj->materialId == METAL || obj->materialId == PLASTIC) shapes[curShape].refl = SPEC;
+            else if (obj->materialId == DIELECTRIC) shapes[curShape].refl = REFR;
+            else shapes[curShape].refl = DIFF;
 
 			shapes[curShape].area = obj->area;
 			curShape++;
