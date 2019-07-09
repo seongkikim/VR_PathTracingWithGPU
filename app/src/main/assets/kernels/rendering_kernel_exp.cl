@@ -289,7 +289,6 @@ __constant
 	debug1[get_global_id(0) + get_global_id(1) * width] = *id;
 	debug2[get_global_id(0) + get_global_id(1) * width] = *t;
 #endif
-	return (*t < inf);
 #elif (ACCELSTR == 1)
 	(*t) = 1e20f;
 	
@@ -738,13 +737,13 @@ const Shape *shapes, const short shapeCnt,
     //rinit(ray, fhi[sgid].ptFirstHit, vl);
 
     int irint = Intersect(shapes, shapeCnt,
-    #if (ACCELSTR == 1)
-            btn, btl,
-    #elif (ACCELSTR == 2)
-    kng, kngCnt,
-            kn, knCnt,
-    #endif
-            &ray, &t2, &id);
+#if (ACCELSTR == 1)
+        btn, btl,
+#elif (ACCELSTR == 2)
+        kng, kngCnt,
+        kn, knCnt,
+#endif
+        &ray, &t2, &id);
 
     if (id != fhi->idxShape) return false;
     //if (irint && t1 >= t2) return;
@@ -761,14 +760,14 @@ bool findSpecRefrPos(
 #endif
 const Shape *shapes, const short shapeCnt,
 #if (ACCELSTR == 1)
-__constant
+    __constant
 
     BVHNodeGPU *btn,
     __constant
 
     BVHNodeGPU *btl,
 #elif (ACCELSTR == 2)
-__constant
+    __constant
 
     KDNodeGPU *kng,
     short kngCnt,
@@ -821,12 +820,12 @@ __constant
     //rinit(ray, fhi[sgid].ptFirstHit, vl);
 
     int irint = Intersect(shapes, shapeCnt,
-    #if (ACCELSTR == 1)
+#if (ACCELSTR == 1)
             btn, btl,
-    #elif (ACCELSTR == 2)
-    kng, kngCnt,
-                kn, knCnt,
-    #endif
+#elif (ACCELSTR == 2)
+        kng, kngCnt,
+        kn, knCnt,
+#endif
         &ray, &t2, &id);
 
     if (id != fhi->idxShape) return false;
@@ -870,14 +869,6 @@ __constant
  __global float *debug2
 #endif
  ) {
-    /*
-  if (*terminated == 1) {
-      if (depth > 0) return;
-      else {
-
-      }
-  }
-    */
   float t;
   unsigned int id = 0;
 
@@ -903,6 +894,7 @@ __constant
   vadd(hitPoint, currentRay->o, hitPoint);
   //{ hitPoint.x = (currentRay->o).x + (hitPoint).x; hitPoint.y = (currentRay->o).y + (hitPoint).y; hitPoint.z = (currentRay->o).z + (hitPoint).z; } 
 
+#ifdef PAPER_20190701
   // In the primary ray case, the current color is initialized to the last color...
   if (depth == 0) {
     fhi->x = result->x;
@@ -910,7 +902,6 @@ __constant
     vassign(fhi->ptFirstHit, hitPoint);
     fhi->idxShape = id;
 
-#if 1
     Vec p;
     bool ret;
 
@@ -946,8 +937,8 @@ __constant
 
         atomic_inc(&currentSampleDiff[locPixelDiff]);
     }
-#endif
   }
+#endif
 
   Vec normal, col;
   enum Refl refl;
@@ -1031,7 +1022,7 @@ __constant
    float r2s = sqrt(r2);
 
    Vec w;
-   vassign(w, nl)
+   vassign(w, nl);
    // { (w).x = (nl).x; (w).y = (nl).y; (w).z = (nl).z; };
 
    Vec u, a;
@@ -1219,7 +1210,8 @@ __constant
         vassign(tdi[sgid].colDiff, results[sgid].p);
         //vinit(tdi[sgid].colDiff, 1.0f, 0.0f, 0.0f);
     }
-#if 1
+
+#ifdef PAPER_20190701
     if (curdepth < 1 || tdi[sgid].refl == REFR) return;
 
     float2 p0, p1;
@@ -1595,26 +1587,58 @@ __kernel void GenerateCameraRay_exp(
  SetInitRay(camera, kcx, kcy, &rays[sgid]);
 }
 
+#ifdef PAPER_20190701
 #if 0
-void atomic_add_v(volatile __global Vec *source, const Vec operand) {
+inline void AtomicAddColor(volatile __global float3 *s1, const float s2, const float3 o1)
+{
+    /*mem_fence(CLK_GLOBAL_MEM_FENCE);
+    *s1 = *s1 + o1 / (float)s2;
+    mem_fence(CLK_GLOBAL_MEM_FENCE);*/
+
     union {
-        unsigned int u32_x, u32_y, u32_z;
-        Vec f32;
+        unsigned int u32;
+        float3        f3;
     } next, expected, current;
 
-    vassign(current.f32, *source);
+    current.f3    = *s1;
+
     do {
-        vassign(expected.f32, current.f32);
-        vadd(next.f32, expected.f32, operand);
-        current.u32_x = atomic_cmpxchg((volatile __global unsigned int *)&source->x, expected.u32_x, next.u32_x);
-        current.u32_y = atomic_cmpxchg((volatile __global unsigned int *)&source->y, expected.u32_y, next.u32_y);
-        current.u32_z = atomic_cmpxchg((volatile __global unsigned int *)&source->z, expected.u32_z, next.u32_z);
-    } while( current.u32_x != expected.u32_x || current.u32_y != expected.u32_y || current.u32_z != expected.u32_z);
+        expected.f3 = current.f3;
+        next.f3     = expected.f3 + o1 / (float)s2;
+        current.u32  = atomic_cmpxchg( (volatile __global unsigned int *)s1, expected.u32, next.u32);
+    } while( current.u32 != expected.u32 );
+    /*
+    union {
+        unsigned int intVal;
+        float3 floatVal;
+    } newVal;
+
+    union {
+        unsigned int intVal;
+        float3 floatVal;
+    } prevVal;
+
+    do {
+        if (s2 < 1) {
+            prevVal.floatVal = *s1;
+            newVal.floatVal = o1; //prevVal.floatVal + o1;
+        }
+        else
+        {
+            const float k = 1.f / (s2 + 1.f);
+
+            prevVal.floatVal = *s1;
+            newVal.floatVal =  k * (s2 * prevVal.floatVal + o1);
+        }
+    } while (atomic_cmpxchg((volatile __global unsigned int *)s1, prevVal.intVal, newVal.intVal) != prevVal.intVal);*/
 }
+#endif
 #endif
 
 __kernel void FillPixel_exp(
-   const short width, const short height, const short bleft, __global Result *results, __global ToDiffInfo *tdi,
+   const short width, const short height, const short bleft, __global Result *results,
+   __global Vec *colorsCPU0, __global Vec *colorsCPU1, __global Vec *colorsCPU2, __global Vec *colorsCPU3, __global unsigned int *currentSampleCPU0, __global unsigned int *currentSampleCPU1, __global unsigned int *currentSampleCPU2, __global unsigned int *currentSampleCPU3, __global unsigned int *genDone,
+   __global ToDiffInfo *tdi, __global ToDiffInfo *tdiCPU0, __global ToDiffInfo *tdiCPU1, __global ToDiffInfo *tdiCPU2, __global ToDiffInfo *tdiCPU3,
    __global int* currentSample, __global int* currentSampleDiff, __global Vec *colors, __global Vec *colorsDiff, __global int *pixels) {
  const int gid = get_global_id(0) + get_global_id(1) * width;
 
@@ -1642,6 +1666,77 @@ __kernel void FillPixel_exp(
 
  currentSample[sgid]++;
 
+#ifdef PAPER_20190701
+    if (bleft) {
+        __global Vec *colorsCPU = NULL;
+        __global unsigned int *currentSampleCPU = NULL;
+
+        if (genDone[0] == 1) {
+            colorsCPU = colorsCPU0;
+            currentSampleCPU = currentSampleCPU0;
+        }
+        if (genDone[2] == 1) {
+            colorsCPU = colorsCPU1;
+            currentSampleCPU = currentSampleCPU1;
+        }
+        if (genDone[4] == 1) {
+            colorsCPU = colorsCPU2;
+            currentSampleCPU = currentSampleCPU2;
+        }
+        if (genDone[6] == 1) {
+            colorsCPU = colorsCPU3;
+            currentSampleCPU = currentSampleCPU3;
+        }
+
+        if (colorsCPU != NULL && currentSampleCPU != NULL) {
+            const float k1 = currentSample[sgid], k2 = currentSampleCPU[sgid], k3 = 1.f / (k1 + k2);
+
+            vsmul(colors[sgid], k1, colors[sgid]);
+            vsmad(colors[sgid], k2, colorsCPU[sgid], colors[sgid]);
+
+            vsmul(colors[sgid], k3, colors[sgid]);
+            currentSample[sgid] += currentSampleCPU[sgid];
+            //genDone[0] = 0;
+        }
+    }
+    else {
+        __global Vec *colorsCPU = NULL;
+        __global unsigned int *currentSampleCPU = NULL;
+
+        if (genDone[1] == 1) {
+            colorsCPU = colorsCPU0;
+            currentSampleCPU = currentSampleCPU0;
+        }
+        if (genDone[3] == 1) {
+            colorsCPU = colorsCPU1;
+            currentSampleCPU = currentSampleCPU1;
+        }
+        if (genDone[5] == 1) {
+            colorsCPU = colorsCPU2;
+            currentSampleCPU = currentSampleCPU2;
+        }
+
+        if (colorsCPU != NULL && currentSampleCPU != NULL) {
+            const float k1 = currentSample[sgid], k2 = currentSampleCPU[sgid], k3 = 1.f / (k1 + k2);
+
+            vsmul(colors[sgid], k1, colors[sgid]);
+            vsmad(colors[sgid], k2, colorsCPU[sgid], colors[sgid]);
+
+            vsmul(colors[sgid], k3, colors[sgid]);
+            currentSample[sgid] += currentSampleCPU[sgid];
+            //genDone[0] = 0;
+        }
+    }
+    /*
+    if (tdi[sgid].x == -1 && tdi[sgid].y == -1 && tdi[sgid].indexDiff == -1) return;
+
+    int sgidDiff = tdi[sgid].indexDiff; //yDiff * width + xDiff;
+
+    if (currentSampleDiff[sgidDiff] == 1) return;
+    else if (currentSampleDiff[sgidDiff] == 1) colorsDiff[sgidDiff] = tdi[sgid].colDiff;
+    else if (currentSampleDiff[sgidDiff] > 1) AtomicAddColor(&colorsDiff[sgidDiff], currentSampleDiff[sgidDiff], tdi[sgid].colDiff);
+     */
+#endif
 #ifdef __ANDROID__
  const int locPixelInv = (height - y - 1) * width + x;
 
@@ -1649,172 +1744,20 @@ __kernel void FillPixel_exp(
      (toInt(colors[sgid].y) << 8) |
      (toInt(colors[sgid].z)) | 0xff000000;
 #else
-pixelsLeft[locPixelLeft] = (toInt(colors[sgid].x)) |
-    (toInt(colors[sgid].y) << 8) |
-    (toInt(colors[sgid].z) << 16) | 0xff000000;
+ pixelsLeft[locPixelLeft] = (toInt(colors[sgid].x)) |
+     (toInt(colors[sgid].y) << 8) |
+     (toInt(colors[sgid].z) << 16) | 0xff000000;
 
-if (bleft) {
-    pixelsRight[locPixelRight] = (toInt(colors[sgid].x)) |
-        (toInt(colors[sgid].y) << 8) |
-        (toInt(colors[sgid].z) << 16) | 0xff000000;
-}
+ if (bleft) {
+     pixelsRight[locPixelRight] = (toInt(colors[sgid].x)) |
+         (toInt(colors[sgid].y) << 8) |
+         (toInt(colors[sgid].z) << 16) | 0xff000000;
+ }
 #endif
-#if 0
-    if (tdi[sgid].x == -1 && tdi[sgid].y == -1 && tdi[sgid].indexDiff) return;
 
-    int sgidDiff = tdi[sgid].indexDiff; //yDiff * width + xDiff;
-
-    if (currentSampleDiff[sgidDiff] == 0) {
-        vassign(colorsDiff[sgidDiff], tdi[sgid].colDiff);
-    } else {
-        const float k = 1.f / ((float)currentSampleDiff[sgidDiff] + 1.f);
-
-        vmad(colorsDiff[sgidDiff], (float)currentSampleDiff[sgidDiff], colorsDiff[sgidDiff], tdi[sgid].colDiff);
-        vsmul(colorsDiff[sgidDiff], k, colorsDiff[sgidDiff]);
-    }
-    atomic_inc(&currentSampleDiff[sgidDiff]);
-#endif
 }
 
-__kernel void FillDiffColors_exp(const short width, const short height, __global Result *results, __global ToDiffInfo *ptdi, __global Vec *colorsDiff, __global int *currentSampleDiff) {
-    const int gid = get_global_id(0) + get_global_id(1) * width;
-
-    const int x = results[gid].x; //gid % width;
-    const int y = results[gid].y; //gid / width;
-
-    if (x < 0 || x >= width || y < 0 || y >= height) return;
-
-    const int sgid = y * width + x;
-    if (ptdi[sgid].x == -1 && ptdi[sgid].y == -1 && ptdi[sgid].indexDiff) return;
-
-    int indexDiff = ptdi[sgid].indexDiff; //yDiff * width + xDiff;
-    if (currentSampleDiff[indexDiff] <= 1) {
-        vassign(colorsDiff[indexDiff], ptdi[sgid].colDiff);
-    } else {
-        const float k = 1.f / ((float)currentSampleDiff[indexDiff] + 1.f);
-
-        vmad(colorsDiff[indexDiff], (float)currentSampleDiff[indexDiff], colorsDiff[indexDiff], ptdi[sgid].colDiff);
-        vsmul(colorsDiff[indexDiff], k, colorsDiff[indexDiff]);
-    }
-}
-
-__kernel void FillDiffPixel_exp(const short width, const short height, __constant Result *results, __constant FirstHitInfo *fhi, __global const Shape *shapes, const short shapeCnt, __constant Camera *cameraDiff,
-#if (ACCELSTR == 1)
-    __constant
-
-     BVHNodeGPU *btn,
-    __constant
-
-     BVHNodeGPU *btl
-#elif (ACCELSTR == 2)
-    __constant
-
-     KDNodeGPU *kng,
-     short kngCnt,
-    __constant
-
-     int *kn,
-     short knCnt
-#endif
-     , __global ToDiffInfo *tdi, __global int *currentSampleDiff
-) {
-    const int gid = get_global_id(0) + get_global_id(1) * width;
-
-    const int x = results[gid].x; //gid % width;
-    const int y = results[gid].y; //gid / width;
-
-    if (x < 0 || x >= width || y < 0 || y >= height) return;
-
-    const int sgid = y * width + x;
-
-    tdi[sgid].x = -1;
-    tdi[sgid].y = -1;
-    vclr(tdi[sgid].colDiff);
-
-    if (fhi[sgid].idxShape == -1) return;
-
-    const Vec l0 = fhi[sgid].ptFirstHit;
-
-    Vec p0;
-    vassign(p0, cameraDiff->start);
-    //vadd(p0, cameraDiff->start, cameraDiff->end);
-    //vsmul(p0, 0.5f, p0);
-    //vnorm(p0);
-
-    Vec n;
-    vsmul(n, -1, cameraDiff->dir);
-    vnorm(n);
-
-    Vec vl;
-    vsub(vl, cameraDiff->orig, fhi[sgid].ptFirstHit);
-    vnorm(vl);
-
-    float t1;
-    bool brint = PlaneIntersect(n, p0, l0, vl, &t1);
-
-    if (!brint) return;
-
-    float t2;
-    Ray ray;
-    unsigned int id;
-
-    Vec ve;
-    vsub(ve, fhi[sgid].ptFirstHit, cameraDiff->orig);
-    vnorm(ve);
-
-    rinit(ray, cameraDiff->orig, ve);
-    //rinit(ray, fhi[sgid].ptFirstHit, vl);
-
-    int irint = Intersect(shapes, shapeCnt,
-#if (ACCELSTR == 1)
-        btn, btl,
-#elif (ACCELSTR == 2)
-        kng, kngCnt,
-        kn, knCnt,
-#endif
-        &ray, &t2, &id);
-
-    if (id != fhi[sgid].idxShape) return;
-    //if (irint && t1 >= t2) return;
-
-    Vec p;
-    vsmul(p, t1, vl);
-    vadd(p, p, l0);
-
-    if (p.x >= cameraDiff->start.x && p.x < cameraDiff->end.x && p.y >= cameraDiff->start.y && p.y < cameraDiff->end.y)
-    {
-        int xDiff = round(((p.x - cameraDiff->start.x) / (cameraDiff->end.x - cameraDiff->start.x)) * (float)(width - 1));
-        int yDiff = round(((p.y - cameraDiff->start.y) / (cameraDiff->end.y - cameraDiff->start.y)) * (float)(height - 1));
-
-        const int locPixelDiff = yDiff * width + xDiff;
-
-        tdi[sgid].x = xDiff;
-        tdi[sgid].y = yDiff;
-        tdi[sgid].indexDiff = yDiff * width + xDiff;
-        tdi[sgid].colDiff = results[sgid].p;
-
-        atomic_inc(&currentSampleDiff[locPixelDiff]);
-#if 0
-        //lock(the_lock);
-          if (currentSampleDiff[locPixelDiff] == 0) {
-           vassign(colorsDiff[locPixelDiff], results[sgid].p); //colors[sgid]);
-          }
-          else {
-           const float k1 = currentSampleDiff[locPixelDiff];
-           const float k2= 1.f / (k1 + 1.f);
-
-           //Vec redP;
-           //vinit(redP, 1.0f, 0.0f, 0.0f);
-           vmad(colorsDiff[locPixelDiff], k1, colorsDiff[locPixelDiff], results[sgid].p);
-           vsmul(colorsDiff[locPixelDiff], k2, colorsDiff[locPixelDiff]);
-          }
-
-          currentSampleDiff[locPixelDiff]++;
-          //unlock(the_lock);
-#endif
-    }
-}
-
+#ifdef PAPER_20190701
 #define WINDOW_SIZE 3
 
 void bubbleSort(unsigned int *v,int size)
@@ -1936,7 +1879,7 @@ __kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInf
 
     const int sgid = y * width + x;
     const int sgid2 = sgid << 1;
-#if 1
+
 #if 1
     // probability-based filtering according to the gaze point
     float2 p0, p1;
@@ -1983,7 +1926,7 @@ __kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInf
         }
     }
 #endif
-#endif
+
     int filter_offset = WINDOW_SIZE / 2;
 
     unsigned int window[WINDOW_SIZE * WINDOW_SIZE];
@@ -2015,6 +1958,7 @@ __kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInf
     unsigned int median = findMedian(window, count);
     output[y * width + x] = median; //window[count / 2];
 }
+#endif
 
 #ifdef CPU_PARTRENDERING
 __kernel void RadiancePathTracing_expbox(

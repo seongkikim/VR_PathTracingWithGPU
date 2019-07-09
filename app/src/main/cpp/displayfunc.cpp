@@ -87,8 +87,8 @@ extern unsigned int lightCnt;
 
 int amiSmallptCPU;
 
-short width = 480;
-short height = 405;
+short width = 640;
+short height = 480;
 unsigned int *pixelsLeft, *pixelsRight, *pixelsTemp;
 char captionBuffer[256];
 

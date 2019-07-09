@@ -43,5 +43,6 @@ extern void BuildBVH();
 extern void BuildKDtree();
 extern unsigned int *DrawFrame();
 extern unsigned int *DrawFrameVR(short bleft);
+extern void finishCPUThreads();
 
 #endif //PTGPU_NATIVE_LIB_H

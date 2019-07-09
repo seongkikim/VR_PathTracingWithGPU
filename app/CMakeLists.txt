@@ -18,6 +18,7 @@ add_library( # Sets the name of the library.
 
              # Provides a relative path to your source file(s).
              src/main/cpp/native-lib.cpp
+             src/main/cpp/simplearrayqueue.cpp
              src/main/cpp/displayfunc.cpp
              src/main/cpp/smallptGPU.cpp
              src/main/cpp/accel/CLBVH.cpp

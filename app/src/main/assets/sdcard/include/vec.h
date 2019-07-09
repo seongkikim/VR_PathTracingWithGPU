@@ -39,6 +39,7 @@ typedef cl_float3 Vec;
 #define vmul(v, a, b) vinit(v, (a).s[0] * (b).s[0], (a).s[1] * (b).s[1], (a).s[2] * (b).s[2])
 #define vmad(v, a, b, c) vinit(v, (b).s[0] * a + (c).s[0], (b).s[1] * a + (c).s[1], (b).s[2] * a + (c).s[2])
 #define vsmul(v, a, b) vinit(v, (b).s[0] * a, (b).s[1] * a, (b).s[2] * a)
+#define vsmad(v, a, b, c) vinit(v, (b).s[0] * a + (c).s[0], (b).s[1] * a + (c).s[1], (b).s[2] * a + (c).s[2])
 #define vdot(a, b) ((a).s[0] * (b).s[0] + (a).s[1] * (b).s[1] + (a).s[2] * (b).s[2])
 #define vnorm(v) { float l = 1.f / sqrt(vdot(v, v)); vsmul(v, l, v); }
 #define vxcross(v, a, b) vinit(v, (a).s[1] * (b).s[2] - (a).s[2] * (b).s[1], (a).s[2] * (b).s[0] - (a).s[0] * (b).s[2], (a).s[0] * (b).s[1] - (a).s[1] * (b).s[0])
@@ -46,6 +47,7 @@ typedef cl_float3 Vec;
 #define viszero(v) (((v).s[0] == 0.f) && ((v).s[1] == 0.f) && ((v).s[2] == 0.f))
 #define norm(v) (sqrt((v).s[0] * (v).s[0] + (v).s[1] * (v).s[1] + (v).s[2] * (v).s[2]))
 #define dist(a, b) (sqrt(((a).s[0]-(b).s[0]) * ((a).s[0]-(b).s[0]) + ((a).s[1]-(b).s[1]) * ((a).s[1]-(b).s[1]) + ((a).s[2]-(b).s[2]) * ((a).s[2]-(b).s[2])))
+#define dist2(a, b) (sqrt(((a).s[0]-(b).s[0]) * ((a).s[0]-(b).s[0]) + ((a).s[1]-(b).s[1]) * ((a).s[1]-(b).s[1])))
 #define affine(v, t, a, b) vinit(v, (a).s[0] * t + (b).s[0] * ( 1 - t ), (a).s[1] * t + (b).s[1] * ( 1 - t ), (a).s[2] * t + (b).s[2] * ( 1 - t ))
 
 #define clamp(x, a, b) ((x) < (a) ? (a) : ((x) > (b) ? (b) : (x)))

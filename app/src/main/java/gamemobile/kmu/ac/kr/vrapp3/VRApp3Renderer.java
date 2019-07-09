@@ -60,6 +60,7 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
     };
 
     public native float[] initSmallPtGPU(int u, int f, String k, int w, int h, String s, String r, AssetManager asset, boolean bvr);
+    public native void finishSmallPtGPU();
     public native int[] updateRendering();
     public native int[] updateRenderingVR(boolean bleft);
     public native void finishRendering();
@@ -473,7 +474,7 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
 
     @Override
     public void onRendererShutdown() {
-
+        finishSmallPtGPU();
     }
 
     public void onNewFrame(HeadTransform headTransform) {

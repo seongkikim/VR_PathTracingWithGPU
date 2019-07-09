@@ -126,6 +126,11 @@ JNICALL Java_gamemobile_kmu_ac_kr_vrapp3_VRApp3Renderer_finishRendering(JNIEnv* 
     // Get JNI Env for all function calls
 }
 
+extern "C" JNIEXPORT void
+JNICALL Java_gamemobile_kmu_ac_kr_vrapp3_VRApp3Renderer_finishSmallPtGPU(JNIEnv* env, jobject /* this */) {
+    // Get JNI Env for all function calls
+    finishCPUThreads();
+}
 #ifdef __cplusplus
 //}
 #endif

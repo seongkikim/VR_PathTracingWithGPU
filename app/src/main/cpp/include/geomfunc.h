@@ -25,6 +25,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define	_GEOMFUNC_H
 
 #include "../../assets/sdcard/include/geom.h"
+#include "../../assets/sdcard/include/camera.h"
 #include "../../assets/sdcard/include/KDNodeGPU.h"
 #include "simplernd.h"
 
@@ -120,6 +121,22 @@ float TriangleIntersect(
 	return 0.0f;
 }
 
+bool PlaneIntersect(const Vec n, const Vec p0, const Vec l0, const Vec l, float *t)
+{
+    // assuming vectors are all normalized
+    float denom = vdot(n, l);
+    if (denom > 0.0f) {
+        //Vec p0l0 = p0 - l0;
+        Vec p0l0;
+        vsub(p0l0, p0, l0); //= p0 - l0;
+        *t = vdot(p0l0, n) / denom;
+
+        return (*t >= 0);
+    }
+
+    return false;
+}
+
 void UniformSampleSphere(const float u1, const float u2, Vec *v) {
 	const float zz = 1.f - 2.f * u1;
 	const float r = sqrt(max(0.f, 1.f - zz * zz));
@@ -206,9 +223,10 @@ __constant
 	float *t,
 	unsigned int *id) {
 #if (ACCELSTR == 0)
+	int intersected = 0;
 	float inf = (*t) = 1e20f;
 
-	short i = shapeCnt;
+	short i = shapeCnt - 1;
 	for (; i--;) {
 		float d = 0.0f;
 		if (shapes[i].type == SPHERE ) d = SphereIntersect(&shapes[i].s, r);
@@ -216,10 +234,11 @@ __constant
 		if ((d != 0.f) && (d < *t)) {
 			*t = d;
 			*id = i;
+			intersected = 1;
 		}
 	}
 
-	return (*t < inf);
+	return intersected;
 #elif (ACCELSTR == 1)
 	(*t) = 1e20f;
 	
@@ -366,7 +385,7 @@ __constant
 	const Ray *r,
 	const float maxt) {
 #if (ACCELSTR == 0)
-    short i = shapeCnt;
+    short i = shapeCnt - 1;
 
     for (; i--;) {
         float d = 0.0f;
@@ -588,13 +607,200 @@ __constant
 	}
 }
 
+bool findDiffPos(
+#ifdef __ANDROID__
+#ifdef GPU_KERNEL
+    __global
+#endif
+#else
+    __constant
+#endif
+const Shape *shapes, const short shapeCnt,
+#if (ACCELSTR == 1)
+    __constant
+
+    BVHNodeGPU *btn,
+    __constant
+
+    BVHNodeGPU *btl,
+#elif (ACCELSTR == 2)
+#ifdef GPU_KERNEL
+    __constant
+#endif
+    KDNodeGPU *kng,
+    short kngCnt,
+#ifdef GPU_KERNEL
+    __constant
+#endif
+    int *kn,
+    short knCnt,
+#endif
+#ifdef GPU_KERNEL
+    __global
+#endif
+    FirstHitInfo *fhi,
+#ifdef GPU_KERNEL
+    __constant
+#endif
+    Camera *camera, Vec *ptCol)
+{
+    const Vec l0 = fhi->ptFirstHit;
+
+    Vec p0;
+    vassign(p0, camera->start);
+    //vadd(p0, cameraDiff->start, cameraDiff->end);
+    //vsmul(p0, 0.5f, p0);
+    //vnorm(p0);
+
+    Vec n;
+    vsmul(n, -1, camera->dir);
+    vnorm(n);
+
+    Vec vl;
+    vsub(vl, camera->orig, fhi->ptFirstHit);
+    vnorm(vl);
+
+    float t1;
+    bool brint = PlaneIntersect(n, p0, l0, vl, &t1);
+
+    if (!brint) return false;
+
+    Vec p;
+    vsmad(p, t1, vl, l0);
+
+    if (p.x < camera->start.x || p.x > camera->end.x || p.y < camera->start.y || p.y > camera->end.y || p.z < camera->start.z || p.z > camera->end.z) return false;
+
+    float t2;
+    Ray ray;
+    unsigned int id;
+
+    Vec ve;
+    vsub(ve, fhi->ptFirstHit, camera->orig);
+    vnorm(ve);
+
+    rinit(ray, camera->orig, ve);
+    //rinit(ray, fhi[sgid].ptFirstHit, vl);
+
+    int irint = Intersect(shapes, shapeCnt,
+#if (ACCELSTR == 1)
+        btn, btl,
+#elif (ACCELSTR == 2)
+        kng, kngCnt,
+        kn, knCnt,
+#endif
+        &ray, &t2, &id);
+
+    if (id != fhi->idxShape) return false;
+    //if (irint && t1 >= t2) return;
+
+    *ptCol = p;
+    return true;
+}
+
+bool findSpecRefrPos(
+#ifdef __ANDROID__
+#ifdef GPU_KERNEL
+        __global
+#endif
+#else
+        __constant
+#endif
+const Shape *shapes, const short shapeCnt,
+#if (ACCELSTR == 1)
+    __constant
+
+    BVHNodeGPU *btn,
+    __constant
+
+    BVHNodeGPU *btl,
+#elif (ACCELSTR == 2)
+#ifdef GPU_KERNEL
+    __constant
+#endif
+    KDNodeGPU *kng,
+    short kngCnt,
+#ifdef GPU_KERNEL
+    __constant
+#endif
+    int *kn,
+    short knCnt,
+#endif
+#ifdef GPU_KERNEL
+    __global
+#endif
+    FirstHitInfo *fhi,
+#ifdef GPU_KERNEL
+    __constant
+#endif
+    Camera *cameraOrg,
+#ifdef GPU_KERNEL
+    __constant
+#endif
+    Camera *cameraDiff, Vec *ptCol)
+{
+    const Vec l0 = fhi->ptFirstHit;
+
+    Vec p0;
+    vassign(p0, cameraDiff->start);
+    //vadd(p0, cameraDiff->start, cameraDiff->end);
+    //vsmul(p0, 0.5f, p0);
+    //vnorm(p0);
+
+    Vec l;
+    vsub(l, l0, cameraOrg->orig);
+
+    Vec n;
+    vsmul(n, -1, cameraDiff->dir);
+    vnorm(n);
+
+    Vec r;
+    vsmul(r, 2.0f * vdot(n, l), n);
+    vsub(r, r, l);
+    vnorm(r);
+
+    float t1;
+    bool brint = PlaneIntersect(n, p0, l0, r, &t1);
+
+    if (!brint) return false;
+
+    Vec p;
+    vsmad(p, t1, r, l0);
+
+    if (p.x < cameraDiff->start.x || p.x > cameraDiff->end.x || p.y < cameraDiff->start.y || p.y > cameraDiff->end.y || p.z < cameraDiff->start.z || p.z > cameraDiff->end.z) return false;
+
+    float t2;
+    Ray ray;
+    unsigned int id;
+
+    Vec ve;
+    vsub(ve, fhi->ptFirstHit, cameraDiff->orig);
+    vnorm(ve);
+
+    rinit(ray, cameraDiff->orig, ve);
+    //rinit(ray, fhi[sgid].ptFirstHit, vl);
+
+    int irint = Intersect(shapes, shapeCnt,
+#if (ACCELSTR == 1)
+            btn, btl,
+#elif (ACCELSTR == 2)
+        kng, kngCnt,
+        kn, knCnt,
+#endif
+        &ray, &t2, &id);
+
+    if (id != fhi->idxShape) return false;
+    //if (irint && t1 >= t2) return;
+
+    *ptCol = p;
+    return true;
+}
+
 void RadianceOnePathTracing(
 #ifdef GPU_KERNEL
 	__constant
 #endif
-	const Shape *shapes,
-	const short shapeCnt,
-	const short lightCnt,
+	const Shape *shapes, const short shapeCnt, const short lightCnt,
+	const short width, const short height, const short midwidth, const short midheight, const float maxdist, const short depth,
 #if (ACCELSTR == 1)
 #ifdef GPU_KERNEL
 	__constant
@@ -618,8 +824,9 @@ void RadianceOnePathTracing(
 #endif
 	Ray *currentRay,
 	unsigned int *seed0, unsigned int *seed1, 
-	Vec *rad, Vec *throughput, char *specularBounce, char *terminated, 
-	Vec *result) {
+	Vec *throughput, char *specularBounce, char *terminated, 
+	Result *result, FirstHitInfo *fhi, Camera *cameraOrg, Camera *cameraDiff, ToDiffInfo *tdi, unsigned int *currentSampleDiff
+ ) {
 	float t; /* distance to intersection */
 	unsigned int id = 0; /* id of intersected object */
 
@@ -630,7 +837,7 @@ void RadianceOnePathTracing(
 		kng, kngCnt, kn, knCnt,
 #endif
 		currentRay, &t, &id)) {
-		*result = *rad;
+		//*result = *rad;
 		*terminated = 1;
 		return;
 	}
@@ -638,6 +845,54 @@ void RadianceOnePathTracing(
 	Vec hitPoint;
 	vsmul(hitPoint, t, currentRay->d);
 	vadd(hitPoint, currentRay->o, hitPoint);
+
+#ifdef PAPER_20190701
+  // In the primary ray case, the current color is initialized to the last color...
+  if (depth == 0) {
+    fhi->x = result->x;
+    fhi->y = result->y;
+    vassign(fhi->ptFirstHit, hitPoint);
+    fhi->idxShape = id;
+
+    Vec p;
+    bool ret;
+
+    if (shapes[id].refl == DIFF)
+        ret = findDiffPos(shapes, shapeCnt,
+#if (ACCELSTR == 1)
+            btn, btl,
+#elif (ACCELSTR == 2)
+            kng, kngCnt, kn, knCnt,
+#endif
+            fhi, cameraDiff, &p);
+    else
+        ret = findSpecRefrPos(shapes, shapeCnt,
+#if (ACCELSTR == 1)
+        btn, btl,
+#elif (ACCELSTR == 2)
+        kng, kngCnt, kn, knCnt,
+#endif
+            fhi, cameraOrg, cameraDiff, &p);
+
+    tdi->refl = shapes[id].refl;
+
+    if (ret) // //&& ret
+    {
+        int xDiff = round(((p.x - cameraDiff->start.x) / (cameraDiff->end.x - cameraDiff->start.x)) * (float)(width - 1));
+        int yDiff = round(((p.y - cameraDiff->start.y) / (cameraDiff->end.y - cameraDiff->start.y)) * (float)(height - 1));
+
+        const int locPixelDiff = yDiff * width + xDiff;
+
+        tdi->x = xDiff;
+        tdi->y = yDiff;
+        tdi->indexDiff = locPixelDiff;
+
+        //atomic_inc(&currentSampleDiff[locPixelDiff]);
+        currentSampleDiff[locPixelDiff]++;
+        //__atomic_fetch_add(&currentSampleDiff[locPixelDiff], 1, __ATOMIC_SEQ_CST);
+    }
+  }
+#endif
 
 	Vec normal, col;
 	enum Refl refl;
@@ -677,10 +932,11 @@ void RadianceOnePathTracing(
 		if (*specularBounce) {
 			vsmul(eCol, fabs(dp), eCol);
 			vmul(eCol, *throughput, eCol);
-			vadd(*rad, *rad, eCol);
+			vadd(result->p, result->p, eCol);
+			//vadd(*rad, *rad, eCol);
 		}
 
-		*result = *rad;
+		//*result = *rad;
 		*terminated = 1;
 
 		return;
@@ -702,7 +958,8 @@ void RadianceOnePathTracing(
 #endif
 	    	seed0, seed1, &hitPoint, &nl, &Ld);
 		vmul(Ld, *throughput, Ld);
-		vadd(*rad, *rad, Ld);
+		vadd(result->p, result->p, Ld);
+		//vadd(*rad, *rad, Ld);
 
 		/* Diffuse component */
 		float r1 = 2.f * FLOAT_PI * GetRandom(seed0, seed1);
@@ -807,9 +1064,12 @@ void RadiancePathTracing(
 #ifdef GPU_KERNEL
 	__constant
 #endif
+	const int gid,
 	const Shape *shapes,
 	const short shapeCnt,
 	const short lightCnt, 
+	const short width, const short height, const short midwidth, const short midheight, const float maxdist,
+	const short curdepth,
 #if (ACCELSTR == 1)
 #ifdef GPU_KERNEL
 	__constant
@@ -831,34 +1091,51 @@ void RadiancePathTracing(
 	int *kn, 
 	short knCnt,
 #endif
-	const Ray *startRay, unsigned int *seed0, unsigned int *seed1, Vec *result) {
-	Ray currentRay; rassign(currentRay, *startRay);
-	Vec rad; vinit(rad, 0.f, 0.f, 0.f);
-	Vec throughput; vinit(throughput, 1.f, 1.f, 1.f);
-
-	unsigned int depth = 0;
-	char specularBounce = 1;
-	char terminated = 0;
-
-	for (;; ++depth) {
-		if (depth > MAX_DEPTH) {
-			*result = rad;
-			return;
-		}
-
-		RadianceOnePathTracing(shapes, shapeCnt, lightCnt, 
+	Ray *rays, unsigned int *seedsInput, Vec *throughput, char *specularBounce, char *terminated, Result *results, FirstHitInfo *fhi, ToDiffInfo *tdi, Camera *cameraOrg, Camera *cameraDiff, unsigned int *currentSampleDiff
+ ) {
+ const int x = results[gid].x;//gid % width; //
+ const int y = results[gid].y;//gid / width; //
+ const int sgid = y * width + x;
+ const int sgid2 = sgid << 1;
+ 
+ if (terminated[sgid] != 1)
+ {
+	Ray aray = rays[sgid];
+	RadianceOnePathTracing(shapes, shapeCnt, lightCnt, width, height, midwidth, midheight, maxdist, curdepth,
 #if (ACCELSTR == 1)
 			btn, btl, 
 #elif (ACCELSTR == 2)
-			kng, kngCnt, kn, knCnt,
+			kng, kngCnt, kn, knCnt, 
 #endif
-			&currentRay, seed0, seed1, &rad, &throughput, &specularBounce, &terminated, result);
+			&aray, &seedsInput[sgid2], &seedsInput[sgid2 + 1], &throughput[sgid], &specularBounce[sgid], &terminated[sgid], &results[sgid], &fhi[sgid], cameraOrg, cameraDiff, &tdi[sgid], currentSampleDiff
+#ifdef DEBUG_INTERSECTIONS
+		, debug1, debug2
+#endif
+	);
+	rays[sgid] = aray;
 
-		if (terminated == 1) {
-			*result = rad;
-			return;
-		}
-	}	
+    if (tdi[sgid].x > -1 && tdi[sgid].y > -1 && tdi[sgid].indexDiff > -1) { // && tdi[sgid].refl == DIFF
+        vassign(tdi[sgid].colDiff, results[sgid].p);
+        //vinit(tdi[sgid].colDiff, 1.0f, 0.0f, 0.0f);
+    }
+
+#ifdef PAPER_20190701
+    if (curdepth < 1 || tdi[sgid].refl == REFR) return;
+
+    cl_float2 p0, p1;
+    p0.x = x, p0.y = y;
+    p1.x = midwidth, p1.y = midheight;
+    const float d = dist2(p1, p0);//sqrt((float)(midwidth - x) * (midwidth - x) + (float)(midheight - y) * (midheight - y));
+    const float prob = clamp(d / maxdist, 0.0f, 0.9f);
+
+    float rand = GetRandom(&seedsInput[sgid2], &seedsInput[sgid2 + 1]);
+    if (rand < prob) {
+        terminated[sgid] = 1;
+        return;
+    }
+#endif
+ }
+
 }
 
 void RadianceDirectLighting(
@@ -939,8 +1216,11 @@ __constant
 
 		case TRIANGLE:
 			{
-			Vec e1; vsub(e1, obj->t.p2, obj->t.p1);
-			Vec e2; vsub(e2, obj->t.p3, obj->t.p1);
+			Vec e1; 
+			vsub(e1, obj->t.p2, obj->t.p1);
+			Vec e2; 
+			vsub(e2, obj->t.p3, obj->t.p1);
+			
 			vxcross(normal, e1, e2);
 			break;
 			}
@@ -955,7 +1235,9 @@ __constant
 		vsmul(nl, invSignDP, normal);
 
 		/* Add emitted light */
-		Vec eCol; vassign(eCol, obj->e);
+		Vec eCol; 
+		
+		vassign(eCol, obj->e);
 		if (!viszero(eCol)) {
 			if (specularBounce) {
 				vsmul(eCol, fabs(dp), eCol);
@@ -1055,7 +1337,51 @@ __constant
 		}
 	}
 }
-
 #endif
-#endif	/* _GEOMFUNC_H */
 
+void FillPixel(
+   const short gid, const short width, const short height, const short bleft, Result *results, ToDiffInfo *tdi,
+   int* currentSample, int* currentSampleDiff, Vec *colors, Vec *colorsDiff, int *pixels) {
+ const int x = results[gid].x; //gid % width;
+ const int y = results[gid].y; //gid / width;
+
+ if (x < 0 || x >= width || y < 0 || y >= height) return;
+
+ const int sgid = y * width + x;
+ const int sgid2 = sgid << 1;
+
+ if (currentSample[sgid] == 0) {
+  vassign(colors[sgid], results[sgid].p);
+  //{ (colors[sgid]).x = (r).x; (colors[sgid]).y = (r).y; (colors[sgid]).z = (r).z; };
+ } else {
+  const float k1 = currentSample[sgid] ;
+  const float k2 = 1.f / (k1 + 1.f);
+
+  vmad(colors[sgid], k1, colors[sgid], results[sgid].p);
+  vsmul(colors[sgid], k2, colors[sgid]);
+  //colors[sgid].x = (colors[sgid].x * k1 + results[sgid].p.x) * k2;
+  //colors[sgid].y = (colors[sgid].y * k1 + results[sgid].p.y) * k2;
+  //colors[sgid].z = (colors[sgid].z * k1 + results[sgid].p.z) * k2;
+ }
+
+ currentSample[sgid]++;
+
+#ifdef __ANDROID__
+ const int locPixelInv = (height - y - 1) * width + x;
+
+ pixels[locPixelInv] = (toInt(colors[sgid].x)  << 16) |
+     (toInt(colors[sgid].y) << 8) |
+     (toInt(colors[sgid].z)) | 0xff000000;
+#else
+ pixelsLeft[locPixelLeft] = (toInt(colors[sgid].x)) |
+     (toInt(colors[sgid].y) << 8) |
+     (toInt(colors[sgid].z) << 16) | 0xff000000;
+
+ if (bleft) {
+     pixelsRight[locPixelRight] = (toInt(colors[sgid].x)) |
+         (toInt(colors[sgid].y) << 8) |
+         (toInt(colors[sgid].z) << 16) | 0xff000000;
+ }
+#endif
+}
+#endif	/* _GEOMFUNC_H */
