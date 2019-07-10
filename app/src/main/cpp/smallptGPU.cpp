@@ -145,14 +145,6 @@ void BuildKDtree();
 
 #define clErrchk(ans) { clAssert((ans), __FILE__, __LINE__); }
 
-int queue_length();
-void init_queue();
-void clear_queue();
-void release_queue();
-void put_queue(int thread, Vec *colors, unsigned int *samples, unsigned int *samplesDiff, ToDiffInfo *tdis);
-void get_queue(int *thread, Vec **colors, unsigned int **samples, unsigned int **samplesDiff, ToDiffInfo **tdis);
-int peek_thread_queue();
-
 inline void clAssert(cl_int code, const char *file, int line)
 {
 	if (code != CL_SUCCESS)
@@ -288,8 +280,6 @@ void FreeBuffers() {
     if (colorsLeft) free(colorsLeft);
 	if (currentSampleRight) free(pcurrentSampleRight);
 	if (currentSampleLeft) free(pcurrentSampleLeft);
-
-    release_queue();
 }
 
 void AllocateBuffers() {
@@ -489,15 +479,10 @@ void AllocateBuffers() {
         clErrchk(status);
     }
 #endif
-	init_queue();
-
-    pthread_mutex_init(&mutex_locks[0], NULL);
-    pthread_mutex_init(&mutex_locks[1], NULL);
-    pthread_mutex_init(&mutex_locks[2], NULL);
-    pthread_mutex_init(&mutex_locks[3], NULL);
-    pthread_mutex_init(&mutex_locks[4], NULL);
-    pthread_mutex_init(&mutex_locks[5], NULL);
-    pthread_mutex_init(&mutex_locks[6], NULL);
+#ifdef PAPER_20190701
+	for(int i = 0; i < NUM_THREADS; i++)
+	    pthread_mutex_init(&mutex_locks[i], NULL);
+#endif
 #endif
 }
 
@@ -2206,7 +2191,11 @@ unsigned int *DrawFrameVR(short bleft) {
 		clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &currentSampleBufferDiff));
         clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorBufferCur));
 		clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorBufferDiff));
+#ifdef PAPER_20190701
 		clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pixelBufferTemp));
+#else
+        clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pixelBuffer));
+#endif
         setTotalTime += (WallClockTime() - setStartTime);
 
 		kernelStartTime = WallClockTime();
