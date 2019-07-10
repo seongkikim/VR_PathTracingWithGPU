@@ -842,7 +842,11 @@ __global
 __constant
 #endif
  const Shape *shapes, const short shapeCnt, const short lightCnt,
- const short width, const short height, const short midwidth, const short midheight, const float maxdist, const short depth,
+ const short width, const short height,
+#ifdef PAPER_20190701
+ const short midwidth, const short midheight, const float maxdist,
+#endif
+ const short depth,
 #if (ACCELSTR == 1)
 __constant
 
@@ -1158,7 +1162,10 @@ __constant
  const Shape *shapes,
  const short shapeCnt,
  const short lightCnt,
- const short width, const short height, const short midwidth, const short midheight, const float maxdist,
+ const short width, const short height,
+#ifdef PAPER_20190701
+ const short midwidth, const short midheight, const float maxdist,
+#endif
  const short curdepth,
 #if (ACCELSTR == 1)
 __constant
@@ -1193,7 +1200,11 @@ __constant
  if (terminated[sgid] != 1)
  {
 	Ray aray = rays[sgid];
-	RadianceOnePathTracing(shapes, shapeCnt, lightCnt, width, height, midwidth, midheight, maxdist, curdepth,
+	RadianceOnePathTracing(shapes, shapeCnt, lightCnt, width, height,
+#ifdef PAPER_20190701
+            midwidth, midheight, maxdist,
+#endif
+	        curdepth,
 #if (ACCELSTR == 1)
 			btn, btl, 
 #elif (ACCELSTR == 2)
@@ -1492,7 +1503,10 @@ void SetInitRay(__constant Camera *camera, const float kcx, const float kcy, __g
 __kernel void GenerateCameraRay_exp(
   __constant Camera *camera,
   __global unsigned int *seedsInput,
-  const short width, const short height, const short midwidth, const short midheight, const float maxdist,
+  const short width, const short height,
+#ifdef PAPER_20190701
+  const short midwidth, const short midheight, const float maxdist,
+#endif
   __global Ray *rays, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results, __global FirstHitInfo *fhi, __global ToDiffInfo *tdi) {
  const int gid = get_global_id(0) + get_global_id(1) * width;
 

@@ -2032,9 +2032,11 @@ unsigned int *DrawFrameVR(short bleft) {
         clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *) &seedBuffer));
         clErrchk(clSetKernelArg(kernelGen, index++, sizeof(short), (void *) &width));
         clErrchk(clSetKernelArg(kernelGen, index++, sizeof(short), (void *) &height));
+#ifdef PAPER_20190701
 		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(short), (void *) &midwidth));
 		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(short), (void *) &midheight));
 		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(float), (void *) &maxdist));
+#endif
         clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *) &rayBuffer));
         clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *) &throughputBuffer));
         clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *) &specularBounceBuffer));
@@ -2057,9 +2059,11 @@ unsigned int *DrawFrameVR(short bleft) {
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *) &lightCnt));
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *) &width));
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *) &height));
+#ifdef PAPER_20190701
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *) &midwidth));
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *) &midheight));
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(float), (void *) &maxdist));
+#endif
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *) &j));
 #if (ACCELSTR == 1)
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(cl_mem), (void *)&btnBuffer));
@@ -2414,9 +2418,9 @@ unsigned int *DrawFrameVR(short bleft) {
 #endif
     currentSample++;
 #endif
-
+#ifdef PAPER_20190701
     free(genDoneTemp);
-
+#endif
 	/*------------------------------------------------------------------------*/
 	const double elapsedTime = WallClockTime() - startTime;
 	const int samples = currentSample - startSampleCount;
@@ -2552,11 +2556,13 @@ void ReInitVR(const int reallocBuffers) {
     bFinish = 0;
     threadNum = (int *)malloc(sizeof(int) * NUM_THREADS);
 
+#ifdef PAPER_20190701
     for(int i = 0 ; i < NUM_THREADS ; i++) {
         threadNum[i] = i;
         if (pthread_create(&threads[i], NULL, do_works, (void *) &threadNum[i]) != 0)
             LOGE("Error when creating a thread #%u", i);
     }
+#endif
 
 	// Check if I have to reallocate buffers
 	if (reallocBuffers) {
