@@ -136,6 +136,7 @@ Shape *shapes;
 FirstHitInfo *fhi;
 unsigned int genDone[NUM_THREADS];
 pthread_mutex_t mutex_locks[NUM_THREADS];
+extern pthread_mutex_t lock_diff;
 
 #if (ACCELSTR == 1)
 void BuildBVH();
@@ -155,6 +156,12 @@ inline void clAssert(cl_int code, const char *file, int line)
 
 void FreeBuffers() {
 #ifdef EXP_KERNEL
+#ifdef PAPER_20190701
+    for(int i = 0; i < NUM_THREADS; i++)
+        pthread_mutex_destroy(&mutex_locks[i]);
+
+    pthread_mutex_destroy(&lock_diff);
+#endif
 	if (tdiBuffer)
 		clErrchk(clReleaseMemObject(tdiBuffer));
 
@@ -482,6 +489,8 @@ void AllocateBuffers() {
 #ifdef PAPER_20190701
 	for(int i = 0; i < NUM_THREADS; i++)
 	    pthread_mutex_init(&mutex_locks[i], NULL);
+
+    pthread_mutex_init(&lock_diff, NULL);
 #endif
 #endif
 }
@@ -1427,8 +1436,8 @@ pthread_t threads[NUM_THREADS];
 
 FirstHitInfo *fhiCPU[NUM_THREADS];
 
-unsigned int *pcurrentSampleCPU[NUM_THREADS];
-unsigned int *pcurrentSampleDiffCPU[NUM_THREADS];
+int *pcurrentSampleCPU[NUM_THREADS];
+int *pcurrentSampleDiffCPU[NUM_THREADS];
 
 ToDiffInfo *ptdiCPU[NUM_THREADS];
 Vec *colorsCPU[NUM_THREADS];
@@ -1528,12 +1537,12 @@ void *do_works(void *arguments) {
     Result *resultCPU = (Result *)malloc(sizeBytes);
     memset(resultCPU, 0, sizeof(Result) * pixelCount);
 
-    sizeBytes = sizeof(unsigned int) * pixelCount;
-    pcurrentSampleCPU[index] = (unsigned int *)malloc(sizeBytes);
-    memset(pcurrentSampleCPU[index], 0, sizeof(unsigned int) * pixelCount);
+    sizeBytes = sizeof(int) * pixelCount;
+    pcurrentSampleCPU[index] = (int *)malloc(sizeBytes);
+    memset(pcurrentSampleCPU[index], 0, sizeof(int) * pixelCount);
 
-    pcurrentSampleDiffCPU[index] = (unsigned int *)malloc(sizeBytes);
-    memset(pcurrentSampleDiffCPU[index], 0, sizeof(unsigned int) * pixelCount);
+    pcurrentSampleDiffCPU[index] = (int *)malloc(sizeBytes);
+    memset(pcurrentSampleDiffCPU[index], 0, sizeof(int) * pixelCount);
 
     sizeBytes = sizeof(ToDiffInfo) * pixelCount;
     ptdiCPU[index] = (ToDiffInfo *)malloc(sizeBytes);
@@ -1593,7 +1602,11 @@ void *do_works(void *arguments) {
                     for (short j = 0; j < MAX_DEPTH; j++) {
                         //short j = 0;
 
-                        RadiancePathTracing(sgid, shapes, shapeCnt, lightCnt, width, height, midwidth, midheight, maxdist, j,
+                        RadiancePathTracing(sgid, shapes, shapeCnt, lightCnt, width, height,
+#ifdef PAPER_20190701
+                            midwidth, midheight, maxdist,
+#endif
+                            j,
 #if (ACCELSTR == 1)
                             btn, btl,
 #elif (ACCELSTR == 2)

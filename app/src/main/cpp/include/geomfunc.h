@@ -24,6 +24,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #ifndef _GEOMFUNC_H
 #define	_GEOMFUNC_H
 
+#include <pthread.h>
 #include "../../assets/sdcard/include/geom.h"
 #include "../../assets/sdcard/include/camera.h"
 #include "../../assets/sdcard/include/KDNodeGPU.h"
@@ -31,6 +32,8 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #ifndef SMALLPT_GPU
 #define INTERSECT_STACK_SIZE (18)
+
+pthread_mutex_t lock_diff;
 
 inline void swap(float *a, float *b)
 {
@@ -78,7 +81,7 @@ float TriangleIntersect(
 	const Ray *r) { /* returns distance, 0 if nohit */
 	Vec v0 = tr->p1, v1 = tr->p2, v2 = tr->p3, e1, e2, tvec, pvec, qvec;
 	float t = 0.0f, u, v;
-	double det, inv_det;
+	float det, inv_det;
 
 	vsub(e1, v1, v0);
 	vsub(e2, v2, v0);
@@ -220,8 +223,8 @@ __constant
 	__constant
 #endif
 	const Ray *r,
-	float *t,
-	unsigned int *id) {
+	float *t, unsigned int *id
+	) {
 #if (ACCELSTR == 0)
 	int intersected = 0;
 	float inf = (*t) = 1e20f;
@@ -264,7 +267,7 @@ __constant
                 }
 			}
 			else if (btn[n].leaf == 2) {
-                double d = 0.0f;
+                float d = 0.0f;
 
 			    if (shapes[btl[btn[n].nLeft].nShape].type == SPHERE ) d = SphereIntersect(&shapes[btl[btn[n].nLeft].nShape].s, r);
 				if (shapes[btl[btn[n].nLeft].nShape].type == TRIANGLE ) d = TriangleIntersect(&shapes[btl[btn[n].nLeft].nShape].t, r);
@@ -320,7 +323,7 @@ __constant
 				}
 			}
 			else if (kng[n].leaf == 1) {
-				double d = 0.0f;
+				float d = 0.0f;
 
 				for (int i = kng[n].min; i < kng[n].max; i++) {
 					if (shapes[kn[i]].type == SPHERE) d = SphereIntersect(&shapes[kn[i]].s, r);
@@ -800,7 +803,11 @@ void RadianceOnePathTracing(
 	__constant
 #endif
 	const Shape *shapes, const short shapeCnt, const short lightCnt,
-	const short width, const short height, const short midwidth, const short midheight, const float maxdist, const short depth,
+	const short width, const short height, 
+#ifdef PAPER_20190701
+	const short midwidth, const short midheight, const float maxdist,
+#endif
+	const short depth,
 #if (ACCELSTR == 1)
 #ifdef GPU_KERNEL
 	__constant
@@ -825,7 +832,7 @@ void RadianceOnePathTracing(
 	Ray *currentRay,
 	unsigned int *seed0, unsigned int *seed1, 
 	Vec *throughput, char *specularBounce, char *terminated, 
-	Result *result, FirstHitInfo *fhi, Camera *cameraOrg, Camera *cameraDiff, ToDiffInfo *tdi, unsigned int *currentSampleDiff
+	Result *result, FirstHitInfo *fhi, Camera *cameraOrg, Camera *cameraDiff, ToDiffInfo *tdi, int *currentSampleDiff
  ) {
 	float t; /* distance to intersection */
 	unsigned int id = 0; /* id of intersected object */
@@ -888,7 +895,9 @@ void RadianceOnePathTracing(
         tdi->indexDiff = locPixelDiff;
 
         //atomic_inc(&currentSampleDiff[locPixelDiff]);
+		pthread_mutex_lock(&lock_diff);
         currentSampleDiff[locPixelDiff]++;
+		pthread_mutex_unlock(&lock_diff);
         //__atomic_fetch_add(&currentSampleDiff[locPixelDiff], 1, __ATOMIC_SEQ_CST);
     }
   }
@@ -1008,7 +1017,8 @@ void RadianceOnePathTracing(
 		vsmul(newDir, 2.f * vdot(normal, currentRay->d), normal);
 		vsub(newDir, currentRay->d, newDir);
 
-		Ray reflRay; rinit(reflRay, hitPoint, newDir); /* Ideal dielectric REFRACTION */
+		Ray reflRay; 
+		rinit(reflRay, hitPoint, newDir); /* Ideal dielectric REFRACTION */
 		int into = (vdot(normal, nl) > 0); /* Ray from outside going in? */
 
 		float nc = 1.f;
@@ -1068,7 +1078,10 @@ void RadiancePathTracing(
 	const Shape *shapes,
 	const short shapeCnt,
 	const short lightCnt, 
-	const short width, const short height, const short midwidth, const short midheight, const float maxdist,
+	const short width, const short height, 
+#ifdef PAPER_20190701
+	const short midwidth, const short midheight, const float maxdist,
+#endif
 	const short curdepth,
 #if (ACCELSTR == 1)
 #ifdef GPU_KERNEL
@@ -1091,7 +1104,7 @@ void RadiancePathTracing(
 	int *kn, 
 	short knCnt,
 #endif
-	Ray *rays, unsigned int *seedsInput, Vec *throughput, char *specularBounce, char *terminated, Result *results, FirstHitInfo *fhi, ToDiffInfo *tdi, Camera *cameraOrg, Camera *cameraDiff, unsigned int *currentSampleDiff
+	Ray *rays, unsigned int *seedsInput, Vec *throughput, char *specularBounce, char *terminated, Result *results, FirstHitInfo *fhi, ToDiffInfo *tdi, Camera *cameraOrg, Camera *cameraDiff, int *currentSampleDiff
  ) {
  const int x = results[gid].x;//gid % width; //
  const int y = results[gid].y;//gid / width; //
@@ -1101,7 +1114,11 @@ void RadiancePathTracing(
  if (terminated[sgid] != 1)
  {
 	Ray aray = rays[sgid];
-	RadianceOnePathTracing(shapes, shapeCnt, lightCnt, width, height, midwidth, midheight, maxdist, curdepth,
+	RadianceOnePathTracing(shapes, shapeCnt, lightCnt, width, height, 
+#ifdef PAPER_20190701
+            midwidth, midheight, maxdist,
+#endif
+			curdepth,
 #if (ACCELSTR == 1)
 			btn, btl, 
 #elif (ACCELSTR == 2)
@@ -1125,7 +1142,7 @@ void RadiancePathTracing(
     cl_float2 p0, p1;
     p0.x = x, p0.y = y;
     p1.x = midwidth, p1.y = midheight;
-    const float d = dist2(p1, p0);//sqrt((float)(midwidth - x) * (midwidth - x) + (float)(midheight - y) * (midheight - y));
+    const float d = dist2(p1, p0); //sqrt((float)(midwidth - x) * (midwidth - x) + (float)(midheight - y) * (midheight - y));
     const float prob = clamp(d / maxdist, 0.0f, 0.9f);
 
     float rand = GetRandom(&seedsInput[sgid2], &seedsInput[sgid2 + 1]);
@@ -1340,7 +1357,10 @@ __constant
 #endif
 
 void FillPixel(
-   const short gid, const short width, const short height, const short bleft, Result *results, ToDiffInfo *tdi,
+   const short gid, const short width, const short height, const short bleft, Result *results, 
+#if 0
+   ToDiffInfo *tdi,
+#endif
    int* currentSample, int* currentSampleDiff, Vec *colors, Vec *colorsDiff, int *pixels) {
  const int x = results[gid].x; //gid % width;
  const int y = results[gid].y; //gid / width;
