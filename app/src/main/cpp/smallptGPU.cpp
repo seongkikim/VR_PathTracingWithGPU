@@ -2165,10 +2165,10 @@ unsigned int *DrawFrameVR(short bleft) {
 
 #ifdef PAPER_20190701
         for(register int thr = 0; thr < NUM_THREADS; thr++) {
-            if (bleft && i % 2 != 0) continue;
-            if (!bleft && i % 2 == 0) continue;
+            if (bleft && thr % 2 != 0) continue;
+            if (!bleft && thr % 2 == 0) continue;
 
-            if (genDoneTemp[i] == 1) pthread_mutex_lock(&mutex_locks[i]);
+            if (genDoneTemp[thr] == 1) pthread_mutex_lock(&mutex_locks[thr]);
         }
 #endif
 		index = 0;
@@ -2220,10 +2220,10 @@ unsigned int *DrawFrameVR(short bleft) {
 		kernelTotalTime += (WallClockTime() - kernelStartTime);
 #ifdef PAPER_20190701
         for(register int thr = 0; thr < NUM_THREADS; thr++) {
-            if (bleft && i % 2 != 0) continue;
-            if (!bleft && i % 2 == 0) continue;
+            if (bleft && thr % 2 != 0) continue;
+            if (!bleft && thr % 2 == 0) continue;
 
-            if (genDoneTemp[i] == 1) pthread_mutex_unlock(&mutex_locks[i]);
+            if (genDoneTemp[thr] == 1) pthread_mutex_unlock(&mutex_locks[thr]);
         }
 #endif
 #if 0
@@ -2270,20 +2270,20 @@ unsigned int *DrawFrameVR(short bleft) {
         int count = 0;
 #endif
 //#pragma omp parallel for num_threads(8)
-        for(register int i = 0; i < NUM_THREADS; i++) {
-            if (bleft && i % 2 != 0) continue;
-            if (!bleft && i % 2 == 0) continue;
-            if (!genDoneTemp[i]) continue;
+        for(register int thr = 0; thr < NUM_THREADS; thr++) {
+            if (bleft && thr % 2 != 0) continue;
+            if (!bleft && thr % 2 == 0) continue;
+            if (!genDoneTemp[thr]) continue;
 
             for (register int index = 0; index < width * height; index++) {
-                if (ptdiCPU[i][index].x != -1 && ptdiCPU[i][index].y != -1 && ptdiCPU[i][index].indexDiff != -1) {
-                    int indexDiff = ptdiCPU[i][index].indexDiff; //yDiff * width + xDiff;
+                if (ptdiCPU[thr][index].x != -1 && ptdiCPU[thr][index].y != -1 && ptdiCPU[thr][index].indexDiff != -1) {
+                    int indexDiff = ptdiCPU[thr][index].indexDiff; //yDiff * width + xDiff;
                     if (pcurrentSampleDiff[indexDiff] < 1) {
-                        vassign(colorsDiff[indexDiff], ptdiCPU[i][index].colDiff);
+                        vassign(colorsDiff[indexDiff], ptdiCPU[thr][index].colDiff);
                     } else {
                         const float k = 1.f / ((float) pcurrentSampleDiff[indexDiff] + 1.f);
 
-                        vmad(colorsDiff[indexDiff], (float) pcurrentSampleDiff[indexDiff], colorsDiff[indexDiff], ptdiCPU[i][index].colDiff);
+                        vmad(colorsDiff[indexDiff], (float) pcurrentSampleDiff[indexDiff], colorsDiff[indexDiff], ptdiCPU[thr][index].colDiff);
                         vsmul(colorsDiff[indexDiff], k, colorsDiff[indexDiff]);
                     }
 
