@@ -1633,12 +1633,27 @@ inline void AtomicAddColor(volatile __global float3 *s1, const float s2, const f
     } while (atomic_cmpxchg((volatile __global unsigned int *)s1, prevVal.intVal, newVal.intVal) != prevVal.intVal);*/
 }
 #endif
+inline void AddColor(__global Vec *colorsCPU, __global unsigned int *currentSampleCPU, __global Vec *colors, __global unsigned int *currentSample, const int sgid)
+{
+    if (colorsCPU != NULL && currentSampleCPU != NULL) {
+        const float k1 = currentSample[sgid], k2 = currentSampleCPU[sgid], k3 = 1.f / (k1 + k2);
+
+        vsmul(colors[sgid], k1, colors[sgid]);
+        vsmad(colors[sgid], k2, colorsCPU[sgid], colors[sgid]);
+
+        vsmul(colors[sgid], k3, colors[sgid]);
+        currentSample[sgid] += currentSampleCPU[sgid];
+        //genDone[0] = 0;
+    }
+}
 #endif
 
 __kernel void FillPixel_exp(
    const short width, const short height, const short bleft, __global Result *results,
    __global Vec *colorsCPU0, __global Vec *colorsCPU1, __global Vec *colorsCPU2, __global Vec *colorsCPU3, __global unsigned int *currentSampleCPU0, __global unsigned int *currentSampleCPU1, __global unsigned int *currentSampleCPU2, __global unsigned int *currentSampleCPU3, __global unsigned int *genDone,
+#if 0
    __global ToDiffInfo *tdi, __global ToDiffInfo *tdiCPU0, __global ToDiffInfo *tdiCPU1, __global ToDiffInfo *tdiCPU2, __global ToDiffInfo *tdiCPU3,
+#endif
    __global int* currentSample, __global int* currentSampleDiff, __global Vec *colors, __global Vec *colorsDiff, __global int *pixels) {
  const int gid = get_global_id(0) + get_global_id(1) * width;
 
@@ -1668,64 +1683,27 @@ __kernel void FillPixel_exp(
 
 #ifdef PAPER_20190701
     if (bleft) {
-        __global Vec *colorsCPU = NULL;
-        __global unsigned int *currentSampleCPU = NULL;
+        if (genDone[0] == 1)
+            AddColor(colorsCPU0, currentSampleCPU0, colors, currentSample, sgid);
 
-        if (genDone[0] == 1) {
-            colorsCPU = colorsCPU0;
-            currentSampleCPU = currentSampleCPU0;
-        }
-        if (genDone[2] == 1) {
-            colorsCPU = colorsCPU1;
-            currentSampleCPU = currentSampleCPU1;
-        }
-        if (genDone[4] == 1) {
-            colorsCPU = colorsCPU2;
-            currentSampleCPU = currentSampleCPU2;
-        }
-        if (genDone[6] == 1) {
-            colorsCPU = colorsCPU3;
-            currentSampleCPU = currentSampleCPU3;
-        }
+        if (genDone[2] == 1)
+            AddColor(colorsCPU1, currentSampleCPU1, colors, currentSample, sgid);
 
-        if (colorsCPU != NULL && currentSampleCPU != NULL) {
-            const float k1 = currentSample[sgid], k2 = currentSampleCPU[sgid], k3 = 1.f / (k1 + k2);
+        if (genDone[4] == 1)
+            AddColor(colorsCPU2, currentSampleCPU2, colors, currentSample, sgid);
 
-            vsmul(colors[sgid], k1, colors[sgid]);
-            vsmad(colors[sgid], k2, colorsCPU[sgid], colors[sgid]);
-
-            vsmul(colors[sgid], k3, colors[sgid]);
-            currentSample[sgid] += currentSampleCPU[sgid];
-            //genDone[0] = 0;
-        }
+        if (genDone[6] == 1)
+            AddColor(colorsCPU3, currentSampleCPU3, colors, currentSample, sgid);
     }
     else {
-        __global Vec *colorsCPU = NULL;
-        __global unsigned int *currentSampleCPU = NULL;
+        if (genDone[1] == 1)
+             AddColor(colorsCPU0, currentSampleCPU0, colors, currentSample, sgid);
 
-        if (genDone[1] == 1) {
-            colorsCPU = colorsCPU0;
-            currentSampleCPU = currentSampleCPU0;
-        }
-        if (genDone[3] == 1) {
-            colorsCPU = colorsCPU1;
-            currentSampleCPU = currentSampleCPU1;
-        }
-        if (genDone[5] == 1) {
-            colorsCPU = colorsCPU2;
-            currentSampleCPU = currentSampleCPU2;
-        }
+        if (genDone[3] == 1)
+             AddColor(colorsCPU1, currentSampleCPU1, colors, currentSample, sgid);
 
-        if (colorsCPU != NULL && currentSampleCPU != NULL) {
-            const float k1 = currentSample[sgid], k2 = currentSampleCPU[sgid], k3 = 1.f / (k1 + k2);
-
-            vsmul(colors[sgid], k1, colors[sgid]);
-            vsmad(colors[sgid], k2, colorsCPU[sgid], colors[sgid]);
-
-            vsmul(colors[sgid], k3, colors[sgid]);
-            currentSample[sgid] += currentSampleCPU[sgid];
-            //genDone[0] = 0;
-        }
+        if (genDone[5] == 1)
+             AddColor(colorsCPU2, currentSampleCPU2, colors, currentSample, sgid);
     }
     /*
     if (tdi[sgid].x == -1 && tdi[sgid].y == -1 && tdi[sgid].indexDiff == -1) return;

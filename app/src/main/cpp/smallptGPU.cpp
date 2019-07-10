@@ -915,19 +915,34 @@ void SetUpOpenCL() {
 #ifdef EXP_KERNEL
 void ExecuteKernel(cl_kernel p_kernel, int cnt_kernel) {
     /* Enqueue a kernel run call */
-    size_t globalThreads[2];
+    size_t globalThreads[1];
 
-    globalThreads[0] = width; //cnt_kernel; //
-    globalThreads[1] = height; //1; //
+    globalThreads[0] = cnt_kernel; //
 
     if (globalThreads[0] % workGroupSize != 0) globalThreads[0] = (globalThreads[0] / workGroupSize + 1) * workGroupSize;
 
-    size_t localThreads[2];
+    size_t localThreads[1];
 
     localThreads[0] = workGroupSize;
-    localThreads[1] = workGroupSize; //1; //
 
-    clErrchk(clEnqueueNDRangeKernel(commandQueue, p_kernel, 2, NULL, globalThreads, localThreads, 0, NULL, NULL));
+    clErrchk(clEnqueueNDRangeKernel(commandQueue, p_kernel, 1, NULL, globalThreads, localThreads, 0, NULL, NULL));
+}
+
+void ExecuteKernel_2D(cl_kernel p_kernel) {
+	/* Enqueue a kernel run call */
+	size_t globalThreads[2];
+
+	globalThreads[0] = width; //cnt_kernel; //
+	globalThreads[1] = height; //1; //
+
+	if (globalThreads[0] % workGroupSize != 0) globalThreads[0] = (globalThreads[0] / workGroupSize + 1) * workGroupSize;
+
+	size_t localThreads[2];
+
+	localThreads[0] = workGroupSize;
+	localThreads[1] = workGroupSize; //1; //
+
+	clErrchk(clEnqueueNDRangeKernel(commandQueue, p_kernel, 2, NULL, globalThreads, localThreads, 0, NULL, NULL));
 }
 #else
 void ExecuteKernel() {
@@ -1495,17 +1510,17 @@ void *do_works(void *arguments) {
 	const float maxdist = sqrt(midwidth * midwidth + midheight * midheight);
 
 	Camera *cameraOrg, *cameraDiff;
-	unsigned int *seedsOrg, *seedsDiff;
+	unsigned int *seedsOrg;
 
 	if (index % 2 == 0)
     {
 	    cameraOrg = &cameraLeft, cameraDiff = &cameraRight;
-        seedsOrg = seedsLeft, seedsDiff = seedsRight;
+        seedsOrg = seedsLeft;
     }
 	else
     {
 	    cameraOrg = &cameraRight, cameraDiff = &cameraLeft;
-        seedsOrg = seedsRight, seedsDiff = seedsLeft;
+        seedsOrg = seedsRight;
     }
 
     unsigned int sizeBytes = sizeof(FirstHitInfo) * pixelCount;
@@ -1599,9 +1614,7 @@ void *do_works(void *arguments) {
 #elif (ACCELSTR == 2)
                             pkngbuf, kngCnt, pknbuf, knCnt,
 #endif
-                            ray, seedsOrg, throughputCPU, specularBounceCPU,
-                            terminatedCPU, resultCPU, fhiCPU[index], ptdiCPU[index], cameraOrg,
-                            cameraDiff, pcurrentSampleDiffCPU[index]);
+                            ray, seedsOrg, throughputCPU, specularBounceCPU, terminatedCPU, resultCPU, fhiCPU[index], ptdiCPU[index], cameraOrg, cameraDiff, pcurrentSampleDiffCPU[index]);
                     }
 
                     if (pcurrentSampleCPU[index][sgid] == 0)
@@ -1610,13 +1623,12 @@ void *do_works(void *arguments) {
                         const float k1 = pcurrentSampleCPU[index][sgid];
                         const float k2 = 1.f / (k1 + 1.f);
 
-                        vsmul(colorsCPU[index][sgid], k1, colorsCPU[index][sgid]);
-                        vadd(colorsCPU[index][sgid], colorsCPU[index][sgid], resultCPU[sgid].p);
+                        vmad(colorsCPU[index][sgid], k1, colorsCPU[index][sgid], resultCPU[sgid].p);
                         vsmul(colorsCPU[index][sgid], k2, colorsCPU[index][sgid]);
                     }
                     // Comment out the below 2 lines after debugging...
                     //colorsCPU[index][sgid].s0 = 1.0f;
-                    //colorsCPU[index][sgid].s1 = colorsCPU[index][sgid].s2 = 0.0f;
+                    //colorsCPU[index][sgid].s1 = colorsCPU[index][sgid].s2 = 1.0f;
 
                     pcurrentSampleCPU[index][sgid]++;
 #if 0
@@ -1658,7 +1670,11 @@ void *do_works(void *arguments) {
         LOGI("Finishing %s...\n", filename);
 #endif
         pthread_mutex_lock(&mutex_locks[index]);
-        put_queue(index, colorsCPU[index], pcurrentSampleCPU[index], pcurrentSampleDiffCPU[index], ptdiCPU[index]);
+
+        clErrchk(clEnqueueWriteBuffer(commandQueue, colorsBufferCPU[index], CL_TRUE, 0, sizeof(Vec) * height * width, colorsCPU[index], 0, NULL, NULL));
+        clErrchk(clEnqueueWriteBuffer(commandQueue, pcurrentSampleBufferCPU[index], CL_TRUE, 0, sizeof(unsigned int) * height * width, pcurrentSampleCPU[index], 0, NULL, NULL));
+        clErrchk(clEnqueueWriteBuffer(commandQueue, tdiBufferCPU[index], CL_TRUE, 0, sizeof(ToDiffInfo) * height * width, ptdiCPU[index], 0, NULL, NULL));
+
         genDone[index] = 1;
         pthread_mutex_unlock(&mutex_locks[index]);
 
@@ -1966,134 +1982,56 @@ unsigned int *DrawFrame() {
 }
 
 unsigned int *DrawFrameVR(short bleft) {
-	int len = pixelCount * sizeof(unsigned int), index = 0;
+	int len = pixelCount * sizeof(unsigned int), index = 0, currentSample, *pcurrentSampleCur, *pcurrentSampleDiff;
 	double startTime = WallClockTime(), setStartTime, kernelStartTime, rwStartTime, setTotalTime = 0.0, kernelTotalTime = 0.0, rwTotalTime = 0.0;
 
-	int currentSample;
     unsigned int* pixels;
     cl_mem colorBufferCur, colorBufferDiff, currentSampleBufferCur, currentSampleBufferDiff, cameraBufferCur, cameraBufferDiff, seedBuffer, pixelBuffer;
+    cl_mem colorsBufferCPU0, colorsBufferCPU1, colorsBufferCPU2, colorsBufferCPU3, pcurrentSampleBufferCPU0, pcurrentSampleBufferCPU1, pcurrentSampleBufferCPU2, pcurrentSampleBufferCPU3;
     Vec *colorsCur, *colorsDiff;
-    int *pcurrentSampleCur, *pcurrentSampleDiff;
 
 	if (bleft) {
-	    currentSample = currentSampleLeft;
-        pixels = pixelsLeft;
+        currentSample = currentSampleLeft, pixels = pixelsLeft, colorsCur = colorsLeft, pcurrentSampleCur = pcurrentSampleLeft, colorsDiff = colorsRight, pcurrentSampleDiff = pcurrentSampleRight;
 
-        cameraBufferCur = cameraBufferLeft;
-        seedBuffer = seedBufferLeft;
-        currentSampleBufferCur = currentSampleBufferLeft;
-        colorBufferCur = colorBufferLeft;
-        pixelBuffer = pixelBufferLeft;
-
-        cameraBufferDiff = cameraBufferRight;
-        currentSampleBufferDiff = currentSampleBufferRight;
-        colorBufferDiff = colorBufferRight;
-        colorsCur = colorsLeft;
-        colorsDiff = colorsRight;
-        pcurrentSampleCur = pcurrentSampleLeft;
-        pcurrentSampleDiff = pcurrentSampleRight;
-	}
+        seedBuffer = seedBufferLeft, pixelBuffer = pixelBufferLeft;
+        cameraBufferCur = cameraBufferLeft, currentSampleBufferCur = currentSampleBufferLeft, colorBufferCur = colorBufferLeft;
+        cameraBufferDiff = cameraBufferRight, currentSampleBufferDiff = currentSampleBufferRight, colorBufferDiff = colorBufferRight;
+        colorsBufferCPU0 = colorsBufferCPU[0], colorsBufferCPU1 = colorsBufferCPU[2], colorsBufferCPU2 = colorsBufferCPU[4], colorsBufferCPU3 = colorsBufferCPU[6];
+        pcurrentSampleBufferCPU0 = pcurrentSampleBufferCPU[0], pcurrentSampleBufferCPU1 = pcurrentSampleBufferCPU[2], pcurrentSampleBufferCPU2 = pcurrentSampleBufferCPU[4], pcurrentSampleBufferCPU3 = pcurrentSampleBufferCPU[6];
+    }
 	else {
-	    currentSample = currentSampleRight;
-        pixels = pixelsRight;
+	    currentSample = currentSampleRight, pixels = pixelsRight, colorsCur = colorsRight, pcurrentSampleCur = pcurrentSampleRight, colorsDiff = colorsLeft, pcurrentSampleDiff = pcurrentSampleLeft;
 
-        cameraBufferCur = cameraBufferRight;
-        seedBuffer = seedBufferRight;
-        currentSampleBufferCur = currentSampleBufferRight;
-        colorBufferCur = colorBufferRight;
-        pixelBuffer = pixelBufferRight;
-
-        cameraBufferDiff = cameraBufferLeft;
-        currentSampleBufferDiff = currentSampleBufferLeft;
-        colorBufferDiff = colorBufferLeft;
-        colorsCur = colorsRight;
-        colorsDiff = colorsLeft;
-        pcurrentSampleCur = pcurrentSampleRight;
-        pcurrentSampleDiff = pcurrentSampleLeft;
+        seedBuffer = seedBufferRight, pixelBuffer = pixelBufferRight;
+        cameraBufferCur = cameraBufferRight, currentSampleBufferCur = currentSampleBufferRight, colorBufferCur = colorBufferRight;
+        cameraBufferDiff = cameraBufferLeft, currentSampleBufferDiff = currentSampleBufferLeft, colorBufferDiff = colorBufferLeft;
+        colorsBufferCPU0 = colorsBufferCPU[1], colorsBufferCPU1 = colorsBufferCPU[3], colorsBufferCPU2 = colorsBufferCPU[5], colorsBufferCPU3 = colorsBufferCPU[5];
+        pcurrentSampleBufferCPU0 = pcurrentSampleBufferCPU[1], pcurrentSampleBufferCPU1 = pcurrentSampleBufferCPU[3], pcurrentSampleBufferCPU2 = pcurrentSampleBufferCPU[5], pcurrentSampleBufferCPU3 = pcurrentSampleBufferCPU[5];
 	}
 
 	const int startSampleCount = currentSample;
-
     int rayCnt = width * height;
-    short midwidth = round((float)width/2.0f), midheight = round((float)height/2.0f);
-    const float maxdist = sqrt(midwidth * midwidth + midheight * midheight);
-    unsigned int *genDoneTemp = (unsigned int *)malloc(sizeof(unsigned int) * NUM_THREADS);
-    unsigned int **pcurrentSampleDiffCPU = (unsigned int **)malloc(sizeof(unsigned int *) * NUM_THREADS);;
-
-    for(int i = 0; i < NUM_THREADS; i++) {
-        pthread_mutex_lock(&mutex_locks[i]);
-        genDoneTemp[i] = genDone[i];
-        pthread_mutex_unlock(&mutex_locks[i]);
-
-        pcurrentSampleDiffCPU[i] = (unsigned int *) malloc(sizeof(unsigned int) * pixelCount);
-        memset(pcurrentSampleDiffCPU[i], 0, sizeof(unsigned int) * pixelCount);
-    }
 
 #ifdef PAPER_20190701
+    short midwidth = round((float)width / 2.0f), midheight = round((float)height / 2.0f);
+    const float maxdist = sqrt(midwidth * midwidth + midheight * midheight);
+    unsigned int *genDoneTemp = (unsigned int *)malloc(sizeof(unsigned int) * NUM_THREADS);
+
+    for(int i = 0; i < NUM_THREADS; i++) {
+        if (bleft && i % 2 != 0) continue;
+        if (!bleft && i % 2 == 0) continue;
+
+        pthread_mutex_lock(&mutex_locks[i]);
+        genDoneTemp[i] = genDone[i];
+        genDone[i] = 0;
+        pthread_mutex_unlock(&mutex_locks[i]);
+    }
+
     rwStartTime = WallClockTime();
     clErrchk(clEnqueueWriteBuffer(commandQueue, colorBufferCur, CL_TRUE, 0, sizeof(Vec) * pixelCount, colorsCur, 0, NULL, NULL));
     clErrchk(clEnqueueWriteBuffer(commandQueue, currentSampleBufferCur, CL_TRUE, 0, sizeof(int) * pixelCount, pcurrentSampleCur, 0, NULL, NULL));
-
-    int lenQ = queue_length();
-    if (lenQ > 0) {
-        int tnCPU;
-        unsigned int *samCPU, *samDiffCPU;
-        Vec *clrCPU;
-        ToDiffInfo *tdiCPU;
-
-        //clrCPU = (Vec *) malloc(sizeof(Vec) * width * height);
-        //samCPU = (unsigned int *) malloc(sizeof(unsigned int) * width * height);
-        //samDiffCPU = (unsigned int *) malloc(sizeof(unsigned int) * width * height);
-        //tdiCPU = (ToDiffInfo *) malloc(sizeof(ToDiffInfo) * width * height);
-
-        LOGI("Copying the #%d works, %d", lenQ, bleft);
-
-        for(int i = 0; i < lenQ; i++) {
-            int tnTemp = peek_thread_queue();
-        	if (bleft) {
-        		if (tnTemp % 2 == 0) {
-                    pthread_mutex_lock(&mutex_locks[tnTemp]);
-					get_queue(&tnCPU, &clrCPU, &samCPU, &samDiffCPU, &tdiCPU);
-					//LOGI("Copying the works by the thread #%d, %f, %f, %f", tn, clrCPU[0].s0, clrCPU[0].s1, clrCPU[0].s2);
-
-					clErrchk(clEnqueueWriteBuffer(commandQueue, colorsBufferCPU[tnCPU], CL_TRUE, 0, sizeof(Vec) * pixelCount, clrCPU, 0, NULL, NULL));
-					clErrchk(clEnqueueWriteBuffer(commandQueue, pcurrentSampleBufferCPU[tnCPU], CL_TRUE, 0, sizeof(unsigned int) * pixelCount, samCPU, 0, NULL, NULL));
-					clErrchk(clEnqueueWriteBuffer(commandQueue, tdiBufferCPU[tnCPU], CL_TRUE, 0, sizeof(ToDiffInfo) * pixelCount, tdiCPU, 0, NULL, NULL));
-
-					memcpy(pcurrentSampleDiffCPU[tnCPU], samDiffCPU, sizeof(unsigned int) * pixelCount);
-                    pthread_mutex_unlock(&mutex_locks[tnTemp]);
-				}
-			}
-        	else {
-				if (tnTemp % 2 != 0) {
-                    pthread_mutex_lock(&mutex_locks[tnTemp]);
-					get_queue(&tnCPU, &clrCPU, &samCPU, &samDiffCPU, &tdiCPU);
-
-					//LOGI("Copying the works by the thread #%d, %f, %f, %f", tn, clrCPU[0].s0, clrCPU[0].s1, clrCPU[0].s2);
-					clErrchk(clEnqueueWriteBuffer(commandQueue, colorsBufferCPU[tnCPU], CL_TRUE, 0, sizeof(Vec) * pixelCount, clrCPU, 0, NULL, NULL));
-					clErrchk(clEnqueueWriteBuffer(commandQueue, pcurrentSampleBufferCPU[tnCPU], CL_TRUE, 0, sizeof(unsigned int) * pixelCount, samCPU, 0, NULL, NULL));
-					clErrchk(clEnqueueWriteBuffer(commandQueue, tdiBufferCPU[tnCPU], CL_TRUE, 0, sizeof(ToDiffInfo) * pixelCount, tdiCPU, 0, NULL, NULL));
-
-					memcpy(pcurrentSampleDiffCPU[tnCPU], samDiffCPU, sizeof(unsigned int) * pixelCount);
-                    pthread_mutex_unlock(&mutex_locks[tnTemp]);
-				}
-        	}
-        }
-    }
     clErrchk(clEnqueueWriteBuffer(commandQueue, genDoneBuffer, CL_TRUE, 0, sizeof(unsigned int) * NUM_THREADS, genDoneTemp, 0, NULL, NULL));
     rwTotalTime += (WallClockTime() - rwStartTime);
-
-    for(int i = 0; i < NUM_THREADS; i++) {
-        pthread_mutex_lock(&mutex_locks[i]);
-
-        if (bleft)
-            if (i % 2 == 0) genDone[i] = 0;
-        else
-            if (i % 2 != 0) genDone[i] = 0;
-
-        pthread_mutex_unlock(&mutex_locks[i]);
-    }
-
 #endif
 
 #ifdef EXP_KERNEL
@@ -2122,7 +2060,7 @@ unsigned int *DrawFrameVR(short bleft) {
         setTotalTime += (WallClockTime() - setStartTime);
 
         kernelStartTime = WallClockTime();
-        ExecuteKernel(kernelGen, rayCnt);
+        ExecuteKernel_2D(kernelGen);
         kernelTotalTime += (WallClockTime() - kernelStartTime);
 
         for (short j = 0; j < MAX_DEPTH; j++) {
@@ -2161,7 +2099,7 @@ unsigned int *DrawFrameVR(short bleft) {
             setTotalTime += (WallClockTime() - setStartTime);
 
             kernelStartTime = WallClockTime();
-            ExecuteKernel(kernelRadiance, rayCnt);
+            ExecuteKernel_2D(kernelRadiance);
             kernelTotalTime += (WallClockTime() - kernelStartTime);
 #if 0
             if (j == 0) {
@@ -2223,7 +2161,15 @@ unsigned int *DrawFrameVR(short bleft) {
 #endif
         }
 
-        index = 0;
+#ifdef PAPER_20190701
+        for(register int thr = 0; thr < NUM_THREADS; thr++) {
+            if (bleft && i % 2 != 0) continue;
+            if (!bleft && i % 2 == 0) continue;
+
+            if (genDoneTemp[i] == 1) pthread_mutex_lock(&mutex_locks[i]);
+        }
+#endif
+		index = 0;
 
         setStartTime = WallClockTime();
         clErrchk(clSetKernelArg(kernelFill, index++, sizeof(short), (void *) &width));
@@ -2231,29 +2177,17 @@ unsigned int *DrawFrameVR(short bleft) {
         clErrchk(clSetKernelArg(kernelFill, index++, sizeof(short), (void *) &bleft));
         clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &resultBuffer));
 
-        if (bleft) {
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorsBufferCPU[0]));
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorsBufferCPU[2]));
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorsBufferCPU[4]));
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorsBufferCPU[6]));
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pcurrentSampleBufferCPU[0]));
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pcurrentSampleBufferCPU[2]));
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pcurrentSampleBufferCPU[4]));
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pcurrentSampleBufferCPU[6]));
-        }
-        else {
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorsBufferCPU[1]));
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorsBufferCPU[3]));
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorsBufferCPU[5]));
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorsBufferCPU[5]));
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pcurrentSampleBufferCPU[1]));
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pcurrentSampleBufferCPU[3]));
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pcurrentSampleBufferCPU[5]));
-            clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pcurrentSampleBufferCPU[5]));
-        }
+        clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorsBufferCPU0));
+        clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorsBufferCPU1));
+        clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorsBufferCPU2));
+        clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorsBufferCPU3));
+        clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pcurrentSampleBufferCPU0));
+        clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pcurrentSampleBufferCPU1));
+        clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pcurrentSampleBufferCPU2));
+        clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &pcurrentSampleBufferCPU3));
 
         clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &genDoneBuffer));
-
+#if 0
         clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &tdiBuffer));
         if (bleft) {
             clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &tdiBufferCPU[0]));
@@ -2267,7 +2201,7 @@ unsigned int *DrawFrameVR(short bleft) {
             clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &tdiBufferCPU[5]));
             clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &tdiBufferCPU[5]));
         }
-
+#endif
         clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &currentSampleBufferCur));
 		clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &currentSampleBufferDiff));
         clErrchk(clSetKernelArg(kernelFill, index++, sizeof(cl_mem), (void *) &colorBufferCur));
@@ -2276,8 +2210,16 @@ unsigned int *DrawFrameVR(short bleft) {
         setTotalTime += (WallClockTime() - setStartTime);
 
 		kernelStartTime = WallClockTime();
-		ExecuteKernel(kernelFill, width * height);
+		ExecuteKernel_2D(kernelFill);
 		kernelTotalTime += (WallClockTime() - kernelStartTime);
+#ifdef PAPER_20190701
+        for(register int thr = 0; thr < NUM_THREADS; thr++) {
+            if (bleft && i % 2 != 0) continue;
+            if (!bleft && i % 2 == 0) continue;
+
+            if (genDoneTemp[i] == 1) pthread_mutex_unlock(&mutex_locks[i]);
+        }
+#endif
 #if 0
         unsigned int npixels[4];
         cl_int status;
@@ -2305,7 +2247,7 @@ unsigned int *DrawFrameVR(short bleft) {
         setTotalTime += (WallClockTime() - setStartTime);
 
         kernelStartTime = WallClockTime();
-        ExecuteKernel(kernelMedian, width * height);
+        ExecuteKernel_2D(kernelMedian);
         kernelTotalTime += (WallClockTime() - kernelStartTime);
 #endif
 #if 0
@@ -2322,13 +2264,13 @@ unsigned int *DrawFrameVR(short bleft) {
         int count = 0;
 #endif
 //#pragma omp parallel for num_threads(8)
-        for(register int index = 0; index < width * height; index++) {
-            //if (ptdi[index].x == -1 && ptdi[index].y == -1 && ptdi[index].indexDiff == -1) continue; // && ptdi[index].refl != DIFF
-            for(int i = 0; i < NUM_THREADS; i++) {
-                if (bleft && i % 2 != 0) continue;
-                if (!bleft && i % 2 == 0) continue;
+        for(register int i = 0; i < NUM_THREADS; i++) {
+            if (bleft && i % 2 != 0) continue;
+            if (!bleft && i % 2 == 0) continue;
+            if (!genDoneTemp[i]) continue;
 
-                if (genDoneTemp[i] && ptdiCPU[i][index].x != -1 && ptdiCPU[i][index].y != -1 && ptdiCPU[i][index].indexDiff != -1) {
+            for (register int index = 0; index < width * height; index++) {
+                if (ptdiCPU[i][index].x != -1 && ptdiCPU[i][index].y != -1 && ptdiCPU[i][index].indexDiff != -1) {
                     int indexDiff = ptdiCPU[i][index].indexDiff; //yDiff * width + xDiff;
                     if (pcurrentSampleDiff[indexDiff] < 1) {
                         vassign(colorsDiff[indexDiff], ptdiCPU[i][index].colDiff);
@@ -2342,42 +2284,8 @@ unsigned int *DrawFrameVR(short bleft) {
                     pcurrentSampleDiff[indexDiff]++;
                 }
             }
-            /*
-            if (bleft) {
-            	for(int i = 0; i < NUM_THREADS; i += 2) {
-					if (genDoneTemp[i] && ptdiCPU[i][index].x != -1 && ptdiCPU[i][index].y != -1 && ptdiCPU[i][index].indexDiff != -1) {
-						int indexDiff = ptdiCPU[i][index].indexDiff; //yDiff * width + xDiff;
-						if (pcurrentSampleDiff[indexDiff] < 1) {
-							vassign(colorsDiff[indexDiff], ptdiCPU[i][index].colDiff);
-						} else {
-							const float k = 1.f / ((float) pcurrentSampleDiff[indexDiff] + 1.f);
-
-							vmad(colorsDiff[indexDiff], (float) pcurrentSampleDiff[indexDiff], colorsDiff[indexDiff], ptdiCPU[i][index].colDiff);
-							vsmul(colorsDiff[indexDiff], k, colorsDiff[indexDiff]);
-						}
-
-						pcurrentSampleDiff[indexDiff]++;
-					}
-            	}
-            }
-            else {
-				for(int i = 1; i < NUM_THREADS; i += 2) {
-					if (genDoneTemp[i] && ptdiCPU[i][index].x != -1 && ptdiCPU[i][index].y != -1 && ptdiCPU[i][index].indexDiff != -1) {
-						int indexDiff = ptdiCPU[i][index].indexDiff; //yDiff * width + xDiff;
-						if (pcurrentSampleDiff[indexDiff] <1) {
-							vassign(colorsDiff[indexDiff], ptdiCPU[i][index].colDiff);
-						} else {
-							const float k = 1.f / ((float) pcurrentSampleDiff[indexDiff] + 1.f);
-
-							vmad(colorsDiff[indexDiff], (float) pcurrentSampleDiff[indexDiff], colorsDiff[indexDiff], ptdiCPU[i][index].colDiff);
-							vsmul(colorsDiff[indexDiff], k, colorsDiff[indexDiff]);
-						}
-
-						pcurrentSampleDiff[indexDiff]++;
-					}
-				}
-            }
-            */
+        }
+        for (register int index = 0; index < width * height; index++) {
             if (ptdi[index].x != -1 && ptdi[index].y != -1 && ptdi[index].indexDiff != -1) {
                 int indexDiff = ptdi[index].indexDiff; //yDiff * width + xDiff;
                 if (pcurrentSampleDiff[indexDiff] < 1) {
@@ -2393,9 +2301,6 @@ unsigned int *DrawFrameVR(short bleft) {
             count++;
 #endif
         }
-        //rwStartTime = WallClockTime();
-        //clErrchk(clEnqueueReadBuffer(commandQueue, genDoneBuffer, CL_TRUE, 0, sizeof(unsigned int) * NUM_THREADS, genDone, 0, NULL, NULL));
-        //rwTotalTime += (WallClockTime() - rwStartTime);
 #if 0
         LOGI("Shared Pixels: %d", count);
 #endif
@@ -2404,9 +2309,9 @@ unsigned int *DrawFrameVR(short bleft) {
 
 	//--------------------------------------------------------------------------
     /* Enqueue readBuffer */
-
     rwStartTime = WallClockTime();
     clErrchk(clEnqueueReadBuffer(commandQueue, pixelBuffer, CL_TRUE, 0, len, pixels, 0, NULL, NULL));
+	clErrchk(clEnqueueReadBuffer(commandQueue, currentSampleBufferCur, CL_TRUE, 0, sizeof(int) * pixelCount, pcurrentSampleCur, 0, NULL, NULL));
     rwTotalTime += (WallClockTime() - rwStartTime);
 
     currentSample += MAX_SPP;
@@ -2521,19 +2426,19 @@ unsigned int *DrawFrameVR(short bleft) {
     currentSample++;
 #endif
 
-    for(int i = 0; i < NUM_THREADS; i++)
-        free(pcurrentSampleDiffCPU[i]);
-
-    free(pcurrentSampleDiffCPU);
     free(genDoneTemp);
 
 	/*------------------------------------------------------------------------*/
 	const double elapsedTime = WallClockTime() - startTime;
 	const int samples = currentSample - startSampleCount;
+	int samplesNew = 0;
+
+	for(register int i = 0; i < width * height; i++)
+		samplesNew += pcurrentSampleCur[i];
 
 	const double sampleSec = samples * height * width / elapsedTime;
-	LOGI("Set time %.5f msec, Kernel time %.5f msec, Read/Write time %.5f msec, Total time %.5f msec (pass %d)  Sample/sec  %.1fK, Left %d\n",
-		 setTotalTime, kernelTotalTime, rwTotalTime, elapsedTime, currentSample, sampleSec / 1000.f, bleft);
+	LOGI("Set time %.5f msec, Kernel time %.5f msec, Read/Write time %.5f msec, Total time %.5f msec (pass %d)  Sample/sec  %.1fK (%d, %d), Left: %d\n",
+		 setTotalTime, kernelTotalTime, rwTotalTime, elapsedTime, currentSample, sampleSec / 1000.f, samples * height * width, samplesNew, bleft);
 
 	return pixels;
 }
