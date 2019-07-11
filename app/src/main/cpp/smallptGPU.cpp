@@ -1504,7 +1504,6 @@ void *do_merge(void *arguments) {
         pthread_cond_wait(&condMergeStart, &lock_startMerge);
         pthread_mutex_unlock(&lock_startMerge);
 
-        LOGI("Starting a merge");
         //pthread_mutex_lock(&lock_finishMerge);
         bFinishMerge = 0;
         //pthread_mutex_lock(&lock_finishMerge);
@@ -1534,8 +1533,6 @@ void *do_merge(void *arguments) {
             }
         }
 
-        LOGI("Starting a merge by GPU");
-
         for (register int index = 0; index < width * height; index++) {
             if (ptdi[index].x != -1 && ptdi[index].y != -1 && ptdi[index].indexDiff != -1) {
                 int indexDiff = ptdi[index].indexDiff; //yDiff * width + xDiff;
@@ -1558,8 +1555,6 @@ void *do_merge(void *arguments) {
         bFinishMerge = 1;
         //pthread_mutex_unlock(&lock_finishMerge);
 		//pthread_cond_signal(&condMergeFinish);
-
-        LOGI("Finishing a merge");
     }
 }
 
@@ -2118,8 +2113,6 @@ unsigned int *DrawFrameVR(short bleft) {
 	    //pthread_cond_wait(&condMergeFinish, NULL);
         //bStartMerge = 0;
     //}
-
-    LOGI("Starting a DrawFrameVR");
 
     rwStartTime = WallClockTime();
     clErrchk(clEnqueueWriteBuffer(commandQueue, colorBufferCur, CL_TRUE, 0, sizeof(Vec) * pixelCount, colorsCur, 0, NULL, NULL));
