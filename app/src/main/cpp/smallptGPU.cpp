@@ -134,9 +134,11 @@ int pixelCount;
 Camera cameraLeft, cameraRight;
 Shape *shapes;
 FirstHitInfo *fhi;
-unsigned int genDone[NUM_THREADS];
+unsigned int genDone[NUM_THREADS], genDoneTemp[NUM_THREADS];
 pthread_mutex_t mutex_locks[NUM_THREADS];
 extern pthread_mutex_t lock_diff;
+pthread_mutex_t lock_startMerge; //, lock_finishMerge;
+pthread_cond_t condMergeStart; //, condMergeFinish;
 
 #if (ACCELSTR == 1)
 void BuildBVH();
@@ -161,6 +163,9 @@ void FreeBuffers() {
         pthread_mutex_destroy(&mutex_locks[i]);
 
     pthread_mutex_destroy(&lock_diff);
+    pthread_mutex_destroy(&lock_startMerge);
+    //pthread_mutex_destroy(&lock_finishMerge);
+    pthread_cond_destroy(&condMergeStart);
 #endif
 	if (tdiBuffer)
 		clErrchk(clReleaseMemObject(tdiBuffer));
@@ -491,6 +496,9 @@ void AllocateBuffers() {
 	    pthread_mutex_init(&mutex_locks[i], NULL);
 
     pthread_mutex_init(&lock_diff, NULL);
+    //pthread_mutex_init(&lock_finishMerge, NULL);
+    pthread_mutex_init(&lock_startMerge, NULL);
+    pthread_cond_init(&condMergeStart, NULL);
 #endif
 #endif
 }
@@ -1430,9 +1438,19 @@ unsigned int *DrawFrame()
     return pPixels;
 }
 #else //NOT CPU_PARTRENDERING
-unsigned int bFinish = 0;
+#ifdef PAPER_20190701
+#include <sys/syscall.h>
+#include <unistd.h>
+
+int *g_pcurrentSampleDiff;
+Vec *g_colorsDiff;
+
+cl_mem g_colorBufferDiff, g_currentSampleBufferDiff;
+short g_bLeft;
+
+unsigned int bFinish = 0, bFinishMerge = 1; // bStartMerge = 0,
 int *threadNum;
-pthread_t threads[NUM_THREADS];
+pthread_t threads[NUM_THREADS], thread_merge;
 
 FirstHitInfo *fhiCPU[NUM_THREADS];
 
@@ -1463,9 +1481,6 @@ void SetInitRay(Camera *camera, const float kcx, const float kcy, Ray *rays) {
     //{ { ((*ray).o).x = (rorig).x; ((*ray).o).y = (rorig).y; ((*ray).o).z = (rorig).z; }; { ((*ray).d).x = (rdir).x; ((*ray).d).y = (rdir).y; ((*ray).d).z = (rdir).z; }; };
 }
 
-#include <sys/syscall.h>
-#include <unistd.h>
-
 bool setCurrentThreadAffinityMask(cpu_set_t mask)
 {
 	int syscallres;
@@ -1478,6 +1493,74 @@ bool setCurrentThreadAffinityMask(cpu_set_t mask)
         return false;
     }
 	else return true;
+}
+
+void *do_merge(void *arguments) {
+    while(!bFinish) {
+        //while(!bStartMerge)
+        //{
+        //}
+        pthread_mutex_lock(&lock_startMerge);
+        pthread_cond_wait(&condMergeStart, &lock_startMerge);
+        pthread_mutex_unlock(&lock_startMerge);
+
+        LOGI("Starting a merge");
+        //pthread_mutex_lock(&lock_finishMerge);
+        bFinishMerge = 0;
+        //pthread_mutex_lock(&lock_finishMerge);
+
+        for (register int thr = 0; thr < NUM_THREADS; thr++) {
+            if (g_bLeft && thr % 2 != 0) continue;
+            if (!g_bLeft && thr % 2 == 0) continue;
+            if (!genDoneTemp[thr]) continue;
+
+            LOGI("Starting a merge thread #%d", thr);
+
+            for (register int index = 0; index < width * height; index++) {
+                if (ptdiCPU[thr][index].x != -1 && ptdiCPU[thr][index].y != -1 && ptdiCPU[thr][index].indexDiff != -1) {
+                    int indexDiff = ptdiCPU[thr][index].indexDiff; //yDiff * width + xDiff;
+
+                    if (g_pcurrentSampleDiff[indexDiff] < 1) {
+                        vassign(g_colorsDiff[indexDiff], ptdiCPU[thr][index].colDiff);
+                    } else {
+                        const float k = 1.f / ((float) g_pcurrentSampleDiff[indexDiff] + 1.f);
+
+                        vmad(g_colorsDiff[indexDiff], (float) g_pcurrentSampleDiff[indexDiff], g_colorsDiff[indexDiff], ptdiCPU[thr][index].colDiff);
+                        vsmul(g_colorsDiff[indexDiff], k, g_colorsDiff[indexDiff]);
+                    }
+
+                    g_pcurrentSampleDiff[indexDiff]++;
+                }
+            }
+        }
+
+        LOGI("Starting a merge by GPU");
+
+        for (register int index = 0; index < width * height; index++) {
+            if (ptdi[index].x != -1 && ptdi[index].y != -1 && ptdi[index].indexDiff != -1) {
+                int indexDiff = ptdi[index].indexDiff; //yDiff * width + xDiff;
+
+                if (g_pcurrentSampleDiff[indexDiff] < 1) {
+                    vassign(g_colorsDiff[indexDiff], ptdi[index].colDiff);
+                } else {
+                    const float k = 1.f / ((float) g_pcurrentSampleDiff[indexDiff] + 1.f);
+
+                    vmad(g_colorsDiff[indexDiff], (float) g_pcurrentSampleDiff[indexDiff], g_colorsDiff[indexDiff], ptdi[index].colDiff);
+                    vsmul(g_colorsDiff[indexDiff], k, g_colorsDiff[indexDiff]);
+                }
+            }
+        }
+
+        //clErrchk(clEnqueueWriteBuffer(commandQueue, g_colorBufferDiff, CL_TRUE, 0, sizeof(Vec) * pixelCount, g_colorsDiff, 0, NULL, NULL));
+        //clErrchk(clEnqueueWriteBuffer(commandQueue, g_currentSampleBufferDiff, CL_TRUE, 0, sizeof(int) * pixelCount, g_pcurrentSampleDiff, 0, NULL, NULL));
+
+        //pthread_mutex_lock(&lock_finishMerge);
+        bFinishMerge = 1;
+        //pthread_mutex_unlock(&lock_finishMerge);
+		//pthread_cond_signal(&condMergeFinish);
+
+        LOGI("Finishing a merge");
+    }
 }
 
 void *do_works(void *arguments) {
@@ -1603,9 +1686,7 @@ void *do_works(void *arguments) {
                         //short j = 0;
 
                         RadiancePathTracing(sgid, shapes, shapeCnt, lightCnt, width, height,
-#ifdef PAPER_20190701
                             midwidth, midheight, maxdist,
-#endif
                             j,
 #if (ACCELSTR == 1)
                             btn, btl,
@@ -1694,6 +1775,7 @@ void *do_works(void *arguments) {
 
     return NULL;
 }
+#endif
 
 #if 0
 void ChangeRays() {
@@ -2013,7 +2095,6 @@ unsigned int *DrawFrameVR(short bleft) {
 #ifdef PAPER_20190701
     short midwidth = round((float)width / 2.0f), midheight = round((float)height / 2.0f);
     const float maxdist = sqrt(midwidth * midwidth + midheight * midheight);
-    unsigned int *genDoneTemp = (unsigned int *)malloc(sizeof(unsigned int) * NUM_THREADS);
 
     for(int i = 0; i < NUM_THREADS; i++) {
         if (bleft && i % 2 != 0) continue;
@@ -2024,6 +2105,21 @@ unsigned int *DrawFrameVR(short bleft) {
         genDone[i] = 0;
         pthread_mutex_unlock(&mutex_locks[i]);
     }
+
+    unsigned int bFinishMergeTemp = bFinishMerge;
+    do
+    {
+        //pthread_mutex_lock(&lock_finishMerge);
+        bFinishMergeTemp = bFinishMerge;
+        //pthread_mutex_unlock(&lock_finishMerge);
+    } while(!bFinishMergeTemp);
+	//if (bStartMerge == 1)
+    //{
+	    //pthread_cond_wait(&condMergeFinish, NULL);
+        //bStartMerge = 0;
+    //}
+
+    LOGI("Starting a DrawFrameVR");
 
     rwStartTime = WallClockTime();
     clErrchk(clEnqueueWriteBuffer(commandQueue, colorBufferCur, CL_TRUE, 0, sizeof(Vec) * pixelCount, colorsCur, 0, NULL, NULL));
@@ -2164,12 +2260,14 @@ unsigned int *DrawFrameVR(short bleft) {
         }
 
 #ifdef PAPER_20190701
+#if 0
         for(register int thr = 0; thr < NUM_THREADS; thr++) {
             if (bleft && thr % 2 != 0) continue;
             if (!bleft && thr % 2 == 0) continue;
 
             if (genDoneTemp[thr] == 1) pthread_mutex_lock(&mutex_locks[thr]);
         }
+#endif
 #endif
 		index = 0;
 
@@ -2219,12 +2317,14 @@ unsigned int *DrawFrameVR(short bleft) {
 		ExecuteKernel_2D(kernelFill);
 		kernelTotalTime += (WallClockTime() - kernelStartTime);
 #ifdef PAPER_20190701
+#if 0
         for(register int thr = 0; thr < NUM_THREADS; thr++) {
             if (bleft && thr % 2 != 0) continue;
             if (!bleft && thr % 2 == 0) continue;
 
             if (genDoneTemp[thr] == 1) pthread_mutex_unlock(&mutex_locks[thr]);
         }
+#endif
 #endif
 #if 0
         unsigned int npixels[4];
@@ -2269,8 +2369,18 @@ unsigned int *DrawFrameVR(short bleft) {
 #if 0
         int count = 0;
 #endif
-//#pragma omp parallel for num_threads(8)
-        for(register int thr = 0; thr < NUM_THREADS; thr++) {
+        g_bLeft = bleft;
+        g_pcurrentSampleDiff = pcurrentSampleDiff;
+        g_currentSampleBufferDiff = currentSampleBufferDiff;
+        g_colorsDiff = colorsDiff;
+        g_colorBufferDiff = colorBufferDiff;
+
+        pthread_mutex_lock(&lock_startMerge);
+		pthread_cond_signal(&condMergeStart);
+        pthread_mutex_unlock(&lock_startMerge);
+        //bStartMerge = 1;
+        //bFinishMerge = 0;
+        /*for(register int thr = 0; thr < NUM_THREADS; thr++) {
             if (bleft && thr % 2 != 0) continue;
             if (!bleft && thr % 2 == 0) continue;
             if (!genDoneTemp[thr]) continue;
@@ -2291,6 +2401,7 @@ unsigned int *DrawFrameVR(short bleft) {
                 }
             }
         }
+
         for (register int index = 0; index < width * height; index++) {
             if (ptdi[index].x != -1 && ptdi[index].y != -1 && ptdi[index].indexDiff != -1) {
                 int indexDiff = ptdi[index].indexDiff; //yDiff * width + xDiff;
@@ -2306,7 +2417,7 @@ unsigned int *DrawFrameVR(short bleft) {
 #if 0
             count++;
 #endif
-        }
+        }*/
 #if 0
         LOGI("Shared Pixels: %d", count);
 #endif
@@ -2431,9 +2542,7 @@ unsigned int *DrawFrameVR(short bleft) {
 #endif
     currentSample++;
 #endif
-#ifdef PAPER_20190701
-    free(genDoneTemp);
-#endif
+
 	/*------------------------------------------------------------------------*/
 	const double elapsedTime = WallClockTime() - startTime;
 	const int samples = currentSample - startSampleCount;
@@ -2566,15 +2675,18 @@ void ReInit(const int reallocBuffers) {
 }
 
 void ReInitVR(const int reallocBuffers) {
+#ifdef PAPER_20190701
     bFinish = 0;
     threadNum = (int *)malloc(sizeof(int) * NUM_THREADS);
 
-#ifdef PAPER_20190701
     for(int i = 0 ; i < NUM_THREADS ; i++) {
         threadNum[i] = i;
         if (pthread_create(&threads[i], NULL, do_works, (void *) &threadNum[i]) != 0)
-            LOGE("Error when creating a thread #%u", i);
+            LOGE("Error when creating a worker thread #%u", i);
     }
+
+    if (pthread_create(&thread_merge, NULL, do_merge, NULL) != 0)
+        LOGE("Error when creating a merge thread");
 #endif
 
 	// Check if I have to reallocate buffers
@@ -2607,6 +2719,7 @@ void ReInitVR(const int reallocBuffers) {
 
 void finishCPUThreads()
 {
+#ifdef PAPER_20190701
     int status;
     bFinish = 1;
 
@@ -2614,6 +2727,7 @@ void finishCPUThreads()
         if (pthread_join(threads[i], (void **)&status) != 0)
             LOGE("Error when joining a thread #%u", i);
     }
+#endif
 }
 
 #ifdef WIN32

@@ -9,7 +9,7 @@ model /storage/emulated/0/gamemobile.kmu.ac.kr.vrapp3/scenes/models/plane-y.obj 
 model /storage/emulated/0/gamemobile.kmu.ac.kr.vrapp3/scenes/models/plane-z.obj  0 70 -60   100 75 1  0 0 0  0.75 .75 0.75  0
 model /storage/emulated/0/gamemobile.kmu.ac.kr.vrapp3/scenes/models/cube.obj  0 10 0  16 16 16  0 0 0  0.4 0.7 0.1  0
 model /storage/emulated/0/gamemobile.kmu.ac.kr.vrapp3/scenes/models/table.obj  27 6 47  16 16 16  0 0 0  0.5 0.2 0  0
-model /storage/emulated/0/gamemobile.kmu.ac.kr.vrapp3/scenes/models/monkey.obj 24 28 44  13 13 13  0 0 0  1 0.9 1  0
+model /storage/emulated/0/gamemobile.kmu.ac.kr.vrapp3/scenes/models/knot.obj 29 22.5 44  0.1 0.1 0.1  0 0 0  1 0.9 1  0
 triangle  10 98 10  -10 98 -10  10 98 -10  20 20 20  0 0 0  0
 triangle  -10 98 10  -10 98 -10  10 98 10  20 20 20  0 0 0  0
 sphere 10  -24 10 44  0.0 0.0 0.0  0.9 0.9 0.9 1
