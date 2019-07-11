@@ -1448,7 +1448,7 @@ Vec *g_colorsDiff;
 cl_mem g_colorBufferDiff, g_currentSampleBufferDiff;
 short g_bLeft;
 
-unsigned int bFinish = 0, bFinishMerge = 1; // bStartMerge = 0,
+unsigned int bFinish = 0, bFinishMerge = 1, bStartMerge = 0;
 int *threadNum;
 pthread_t threads[NUM_THREADS], thread_merge;
 
@@ -1497,15 +1497,15 @@ bool setCurrentThreadAffinityMask(cpu_set_t mask)
 
 void *do_merge(void *arguments) {
     while(!bFinish) {
-        //while(!bStartMerge)
-        //{
-        //}
-        pthread_mutex_lock(&lock_startMerge);
-        pthread_cond_wait(&condMergeStart, &lock_startMerge);
-        pthread_mutex_unlock(&lock_startMerge);
+        while(!bStartMerge)
+        {
+        }
+        //pthread_mutex_lock(&lock_startMerge);
+        //pthread_cond_wait(&condMergeStart, &lock_startMerge);
+        //pthread_mutex_unlock(&lock_startMerge);
 
         //pthread_mutex_lock(&lock_finishMerge);
-        bFinishMerge = 0;
+        //bFinishMerge = 0;
         //pthread_mutex_lock(&lock_finishMerge);
 
         for (register int thr = 0; thr < NUM_THREADS; thr++) {
@@ -1552,6 +1552,7 @@ void *do_merge(void *arguments) {
         //clErrchk(clEnqueueWriteBuffer(commandQueue, g_currentSampleBufferDiff, CL_TRUE, 0, sizeof(int) * pixelCount, g_pcurrentSampleDiff, 0, NULL, NULL));
 
         //pthread_mutex_lock(&lock_finishMerge);
+        bStartMerge = 0;
         bFinishMerge = 1;
         //pthread_mutex_unlock(&lock_finishMerge);
 		//pthread_cond_signal(&condMergeFinish);
@@ -2101,13 +2102,17 @@ unsigned int *DrawFrameVR(short bleft) {
         pthread_mutex_unlock(&mutex_locks[i]);
     }
 
-    unsigned int bFinishMergeTemp = bFinishMerge;
-    do
+    while(!bFinishMerge)
     {
+
+    }
+    //unsigned int bFinishMergeTemp = bFinishMerge;
+    //do
+    //{
         //pthread_mutex_lock(&lock_finishMerge);
-        bFinishMergeTemp = bFinishMerge;
+        //bFinishMergeTemp = bFinishMerge;
         //pthread_mutex_unlock(&lock_finishMerge);
-    } while(!bFinishMergeTemp);
+    //} while(!bFinishMergeTemp);
 	//if (bStartMerge == 1)
     //{
 	    //pthread_cond_wait(&condMergeFinish, NULL);
@@ -2368,11 +2373,11 @@ unsigned int *DrawFrameVR(short bleft) {
         g_colorsDiff = colorsDiff;
         g_colorBufferDiff = colorBufferDiff;
 
-        pthread_mutex_lock(&lock_startMerge);
-		pthread_cond_signal(&condMergeStart);
-        pthread_mutex_unlock(&lock_startMerge);
-        //bStartMerge = 1;
-        //bFinishMerge = 0;
+        //pthread_mutex_lock(&lock_startMerge);
+		//pthread_cond_signal(&condMergeStart);
+        //pthread_mutex_unlock(&lock_startMerge);
+        bStartMerge = 1;
+        bFinishMerge = 0;
         /*for(register int thr = 0; thr < NUM_THREADS; thr++) {
             if (bleft && thr % 2 != 0) continue;
             if (!bleft && thr % 2 == 0) continue;
