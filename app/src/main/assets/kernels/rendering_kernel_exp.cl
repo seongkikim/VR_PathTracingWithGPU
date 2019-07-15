@@ -900,7 +900,7 @@ __constant
 
 #ifdef PAPER_20190701
   // In the primary ray case, the current color is initialized to the last color...
-  if (depth == 0) {
+  if (depth == 0 && (shapes[id].refl == DIFF || shapes[id].refl == SPEC)) {
     fhi->x = result->x;
     fhi->y = result->y;
     vassign(fhi->ptFirstHit, hitPoint);
@@ -917,7 +917,7 @@ __constant
             kng, kngCnt, kn, knCnt,
 #endif
             fhi, cameraDiff, &p);
-    else
+    else if (shapes[id].refl == SPEC)
         ret = findSpecRefrPos(shapes, shapeCnt,
 #if (ACCELSTR == 1)
         btn, btl,
@@ -1060,6 +1060,9 @@ __constant
    
    return;
   } else if (refl == SPEC) {
+#ifdef PAPER_20190701
+    tdi->pureDiff = 0;
+#endif
    *specularBounce = 1;
 
    Vec newDir;
@@ -1074,6 +1077,9 @@ __constant
    
    return;
   } else {
+#ifdef PAPER_20190701
+    tdi->pureDiff = 0;
+#endif
    *specularBounce = 1;
 
    Vec newDir;
@@ -1137,7 +1143,34 @@ __constant
 
     rassign(*currentRay, reflRay);
     //{ { ((currentRay)->o).x = ((reflRay).o).x; ((currentRay)->o).y = ((reflRay).o).y; ((currentRay)->o).z = ((reflRay).o).z; }; { ((currentRay)->d).x = ((reflRay).d).x; ((currentRay)->d).y = ((reflRay).d).y; ((currentRay)->d).z = ((reflRay).d).z; }; };
-    
+#ifdef PAPER_20190701
+    if (depth == 0 && refl == REFR) {
+        Vec p;
+        bool ret = findSpecRefrPos(shapes, shapeCnt,
+        #if (ACCELSTR == 1)
+                btn, btl,
+        #elif (ACCELSTR == 2)
+                kng, kngCnt, kn, knCnt,
+        #endif
+                fhi, cameraOrg, cameraDiff, &p);
+
+        tdi->refl = refl;
+
+        if (ret) // //&& ret
+        {
+            int xDiff = round(((p.x - cameraDiff->start.x) / (cameraDiff->end.x - cameraDiff->start.x)) * (float)(width - 1));
+            int yDiff = round(((p.y - cameraDiff->start.y) / (cameraDiff->end.y - cameraDiff->start.y)) * (float)(height - 1));
+
+            const int locPixelDiff = yDiff * width + xDiff;
+
+            tdi->x = xDiff;
+            tdi->y = yDiff;
+            tdi->indexDiff = locPixelDiff;
+
+            atomic_inc(&currentSampleDiff[locPixelDiff]);
+        }
+    }
+#endif
 	return;
    } else {
     vsmul(*throughput, TP, *throughput);
@@ -1147,7 +1180,34 @@ __constant
 
     rinit(*currentRay, hitPoint, transDir);
     //{ { ((currentRay)->o).x = (hitPoint).x; ((currentRay)->o).y = (hitPoint).y; ((currentRay)->o).z = (hitPoint).z; }; { ((currentRay)->d).x = (transDir).x; ((currentRay)->d).y = (transDir).y; ((currentRay)->d).z = (transDir).z; }; };
+#ifdef PAPER_20190701
+    if (depth == 0 && refl == REFR) {
+        Vec p;
+        bool ret = findDiffPos(shapes, shapeCnt,
+        #if (ACCELSTR == 1)
+                btn, btl,
+        #elif (ACCELSTR == 2)
+                kng, kngCnt, kn, knCnt,
+        #endif
+                fhi, cameraDiff, &p);
 
+        tdi->refl = refl;
+
+        if (ret) // //&& ret
+        {
+            int xDiff = round(((p.x - cameraDiff->start.x) / (cameraDiff->end.x - cameraDiff->start.x)) * (float)(width - 1));
+            int yDiff = round(((p.y - cameraDiff->start.y) / (cameraDiff->end.y - cameraDiff->start.y)) * (float)(height - 1));
+
+            const int locPixelDiff = yDiff * width + xDiff;
+
+            tdi->x = xDiff;
+            tdi->y = yDiff;
+            tdi->indexDiff = locPixelDiff;
+
+            atomic_inc(&currentSampleDiff[locPixelDiff]);
+        }
+    }
+#endif
 	return;
    }
  }
@@ -1224,6 +1284,7 @@ __constant
 
 #ifdef PAPER_20190701
     if (curdepth < 1 || tdi[sgid].refl == REFR) return;
+    if (tdi[sgid].pureDiff == 0) return;
 
     float2 p0, p1;
     p0.x = x, p0.y = y;
@@ -1537,6 +1598,7 @@ __kernel void GenerateCameraRay_exp(
  tdi[sgid].x = -1;
  tdi[sgid].y = -1;
  tdi[sgid].indexDiff = -1;
+ tdi[sgid].pureDiff = 1;
  vclr(tdi[sgid].colDiff);
 #if 0
 #if 1
