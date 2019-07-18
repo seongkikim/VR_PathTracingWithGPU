@@ -1496,6 +1496,18 @@ bool setCurrentThreadAffinityMask(cpu_set_t mask)
 }
 
 void *do_merge(void *arguments) {
+    cpu_set_t cpuset;
+    int idxCore = 0;
+
+    CPU_ZERO(&cpuset);
+    CPU_SET(idxCore, &cpuset);
+
+    //if (!setCurrentThreadAffinityMask(cpuset))
+    //    LOGE("Error in setting the threadAffinityMask of Thread #%u", idxCore);
+
+    if (sched_setaffinity(gettid(), sizeof(cpu_set_t), &cpuset))
+        LOGE("Error in setting the sched_setaffinity of Thread #%u", idxCore);
+
     while(!bFinish) {
         while(!bStartMerge)
         {
