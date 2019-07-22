@@ -1594,7 +1594,7 @@ void *do_works(void *arguments) {
 	short midwidth = round((float)width/2.0f), midheight = round((float)height/2.0f);
 	const float maxdist = sqrt(midwidth * midwidth + midheight * midheight);
 
-	Camera *cameraOrg, *cameraDiff;
+    Camera *cameraOrg, *cameraDiff;
 	unsigned int *seedsOrg;
 
 	if (index % 2 == 0)
@@ -1607,6 +1607,11 @@ void *do_works(void *arguments) {
 	    cameraOrg = &cameraRight, cameraDiff = &cameraLeft;
         seedsOrg = seedsRight;
     }
+
+    Vec mid;
+
+    mid.x = (cameraOrg->start.x + cameraOrg->end.x)/2.0f,  mid.y = (cameraOrg->start.y + cameraOrg->end.y)/2.0f, mid.z = (cameraOrg->start.z + cameraOrg->end.z)/2.0f;
+    const float mindist = dist(cameraOrg->orig, mid) * tan(5.2 * M_PI / 180.0f) * height; //dist(cameraCur->orig, mid) *
 
     unsigned int sizeBytes = sizeof(FirstHitInfo) * pixelCount;
     fhiCPU[index] = (FirstHitInfo *)malloc(sizeBytes);
@@ -1677,6 +1682,7 @@ void *do_works(void *arguments) {
                     terminatedCPU[sgid] = 0;
                     resultCPU[sgid].x = x, resultCPU[sgid].y = ny;
                     vclr(resultCPU[sgid].p);
+                    resultCPU[sgid].depth_traversed = 0;
 
                     fhiCPU[index][sgid].x = x, fhi[sgid].y = ny;
                     fhiCPU[index][sgid].idxShape = -1;
@@ -1685,6 +1691,7 @@ void *do_works(void *arguments) {
                     ptdiCPU[index][sgid].x = -1;
                     ptdiCPU[index][sgid].y = -1;
                     ptdiCPU[index][sgid].indexDiff = -1;
+                    ptdiCPU[index][sgid].pureDiff = 1;
                     vclr(ptdiCPU[index][sgid].colDiff);
 
                     SetInitRay(cameraOrg, kcx, kcy, &ray[sgid]);
@@ -1694,7 +1701,7 @@ void *do_works(void *arguments) {
                         //short j = 0;
 
                         RadiancePathTracing(sgid, shapes, shapeCnt, lightCnt, width, height,
-                            midwidth, midheight, maxdist,
+                            midwidth, midheight, mindist, maxdist,
                             j,
 #if (ACCELSTR == 1)
                             btn, btl,

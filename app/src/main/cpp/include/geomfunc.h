@@ -855,7 +855,7 @@ void RadianceOnePathTracing(
 
 #ifdef PAPER_20190701
   // In the primary ray case, the current color is initialized to the last color...
-  if (depth == 0) {
+  if (depth == 0 && (shapes[id].refl == DIFF || shapes[id].refl == SPEC)) {
     fhi->x = result->x;
     fhi->y = result->y;
     vassign(fhi->ptFirstHit, hitPoint);
@@ -872,7 +872,7 @@ void RadianceOnePathTracing(
             kng, kngCnt, kn, knCnt,
 #endif
             fhi, cameraDiff, &p);
-    else
+    else if (shapes[id].refl == SPEC)
         ret = findSpecRefrPos(shapes, shapeCnt,
 #if (ACCELSTR == 1)
         btn, btl,
@@ -999,6 +999,9 @@ void RadianceOnePathTracing(
 		
 		return;
 	} else if (refl == SPEC) { /* Ideal SPECULAR reflection */
+#ifdef PAPER_20190701
+    	tdi->pureDiff = 0;
+#endif
 		*specularBounce = 1;
 
 		Vec newDir;
@@ -1011,6 +1014,9 @@ void RadianceOnePathTracing(
 
 		return;
 	} else {
+#ifdef PAPER_20190701
+    	tdi->pureDiff = 0;
+#endif
 		*specularBounce = 1;
 
 		Vec newDir;
@@ -1058,13 +1064,73 @@ void RadianceOnePathTracing(
 			vsmul(*throughput, RP, *throughput);
 			vmul(*throughput, *throughput, col);
 			rassign(*currentRay, reflRay);
+#ifdef PAPER_20190701
+    if (depth == 0 && refl == REFR) {
+        Vec p;
+        bool ret = findSpecRefrPos(shapes, shapeCnt,
+        #if (ACCELSTR == 1)
+                btn, btl,
+        #elif (ACCELSTR == 2)
+                kng, kngCnt, kn, knCnt,
+        #endif
+                fhi, cameraOrg, cameraDiff, &p);
 
+        tdi->refl = refl;
+
+        if (ret) // //&& ret
+        {
+            int xDiff = round(((p.x - cameraDiff->start.x) / (cameraDiff->end.x - cameraDiff->start.x)) * (float)(width - 1));
+            int yDiff = round(((p.y - cameraDiff->start.y) / (cameraDiff->end.y - cameraDiff->start.y)) * (float)(height - 1));
+
+            const int locPixelDiff = yDiff * width + xDiff;
+
+            tdi->x = xDiff;
+            tdi->y = yDiff;
+            tdi->indexDiff = locPixelDiff;
+
+            //atomic_inc(&currentSampleDiff[locPixelDiff]);
+			pthread_mutex_lock(&lock_diff);
+			currentSampleDiff[locPixelDiff]++;
+			pthread_mutex_unlock(&lock_diff);
+        }
+    }
+#endif
 			return;
 		} else {
 			vsmul(*throughput, TP, *throughput);
 			vmul(*throughput, *throughput, col);
 			rinit(*currentRay, hitPoint, transDir);
+#ifdef PAPER_20190701
+    if (depth == 0 && refl == REFR) {
+        Vec p;
+        bool ret = findDiffPos(shapes, shapeCnt,
+        #if (ACCELSTR == 1)
+                btn, btl,
+        #elif (ACCELSTR == 2)
+                kng, kngCnt, kn, knCnt,
+        #endif
+                fhi, cameraDiff, &p);
 
+        tdi->refl = refl;
+
+        if (ret) // //&& ret
+        {
+            int xDiff = round(((p.x - cameraDiff->start.x) / (cameraDiff->end.x - cameraDiff->start.x)) * (float)(width - 1));
+            int yDiff = round(((p.y - cameraDiff->start.y) / (cameraDiff->end.y - cameraDiff->start.y)) * (float)(height - 1));
+
+            const int locPixelDiff = yDiff * width + xDiff;
+
+            tdi->x = xDiff;
+            tdi->y = yDiff;
+            tdi->indexDiff = locPixelDiff;
+
+            //atomic_inc(&currentSampleDiff[locPixelDiff]);
+			pthread_mutex_lock(&lock_diff);
+			currentSampleDiff[locPixelDiff]++;
+			pthread_mutex_unlock(&lock_diff);
+        }
+    }
+#endif
 			return;
 		}
 	}
@@ -1080,7 +1146,7 @@ void RadiancePathTracing(
 	const short lightCnt, 
 	const short width, const short height, 
 #ifdef PAPER_20190701
-	const short midwidth, const short midheight, const float maxdist,
+	const short midwidth, const short midheight, const float mindist, const float maxdist,
 #endif
 	const short curdepth,
 #if (ACCELSTR == 1)
@@ -1138,15 +1204,19 @@ void RadiancePathTracing(
 
 #ifdef PAPER_20190701
     if (curdepth < 1 || tdi[sgid].refl == REFR) return;
+    if (tdi[sgid].pureDiff == 0) return;
 
     cl_float2 p0, p1;
     p0.x = x, p0.y = y;
     p1.x = midwidth, p1.y = midheight;
     const float d = dist2(p1, p0); //sqrt((float)(midwidth - x) * (midwidth - x) + (float)(midheight - y) * (midheight - y));
+
+    if (d < mindist) return;
     const float prob = clamp(d / maxdist, 0.0f, 0.9f);
 
     float rand = GetRandom(&seedsInput[sgid2], &seedsInput[sgid2 + 1]);
     if (rand < prob) {
+        results[gid].depth_traversed = 1; //curdepth;
         terminated[sgid] = 1;
         return;
     }
