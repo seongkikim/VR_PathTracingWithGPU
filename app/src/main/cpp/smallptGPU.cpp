@@ -2074,11 +2074,13 @@ unsigned int *DrawFrameVR(short bleft) {
 	double startTime = WallClockTime(), setStartTime, kernelStartTime, rwStartTime, setTotalTime = 0.0, kernelTotalTime = 0.0, rwTotalTime = 0.0;
 
     unsigned int* pixels;
+    Camera *cameraCur;
     cl_mem colorBufferCur, colorBufferDiff, currentSampleBufferCur, currentSampleBufferDiff, cameraBufferCur, cameraBufferDiff, seedBuffer, pixelBuffer;
     cl_mem colorsBufferCPU0, colorsBufferCPU1, colorsBufferCPU2, colorsBufferCPU3, pcurrentSampleBufferCPU0, pcurrentSampleBufferCPU1, pcurrentSampleBufferCPU2, pcurrentSampleBufferCPU3;
     Vec *colorsCur, *colorsDiff;
 
 	if (bleft) {
+        cameraCur = &cameraLeft;
         currentSample = currentSampleLeft, pixels = pixelsLeft, colorsCur = colorsLeft, pcurrentSampleCur = pcurrentSampleLeft, colorsDiff = colorsRight, pcurrentSampleDiff = pcurrentSampleRight;
 
         seedBuffer = seedBufferLeft, pixelBuffer = pixelBufferLeft;
@@ -2088,6 +2090,7 @@ unsigned int *DrawFrameVR(short bleft) {
         pcurrentSampleBufferCPU0 = pcurrentSampleBufferCPU[0], pcurrentSampleBufferCPU1 = pcurrentSampleBufferCPU[2], pcurrentSampleBufferCPU2 = pcurrentSampleBufferCPU[4], pcurrentSampleBufferCPU3 = pcurrentSampleBufferCPU[6];
     }
 	else {
+        cameraCur = &cameraRight;
 	    currentSample = currentSampleRight, pixels = pixelsRight, colorsCur = colorsRight, pcurrentSampleCur = pcurrentSampleRight, colorsDiff = colorsLeft, pcurrentSampleDiff = pcurrentSampleLeft;
 
         seedBuffer = seedBufferRight, pixelBuffer = pixelBufferRight;
@@ -2103,6 +2106,12 @@ unsigned int *DrawFrameVR(short bleft) {
 #ifdef PAPER_20190701
     short midwidth = round((float)width / 2.0f), midheight = round((float)height / 2.0f);
     const float maxdist = sqrt(midwidth * midwidth + midheight * midheight);
+    Vec mid;
+
+    mid.x = (cameraCur->start.x + cameraCur->end.x)/2.0f,  mid.y = (cameraCur->start.y + cameraCur->end.y)/2.0f, mid.z = (cameraCur->start.z + cameraCur->end.z)/2.0f;
+    const float mindist = dist(cameraCur->orig, mid) * tan(5.2 * M_PI / 180.0f) * height; //dist(cameraCur->orig, mid) *
+
+    //LOGI("mindist: %f, maxdist: %f", mindist, maxdist);
 
     for(int i = 0; i < NUM_THREADS; i++) {
         if (bleft && i % 2 != 0) continue;
@@ -2154,6 +2163,7 @@ unsigned int *DrawFrameVR(short bleft) {
 #ifdef PAPER_20190701
 		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(short), (void *) &midwidth));
 		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(short), (void *) &midheight));
+        clErrchk(clSetKernelArg(kernelGen, index++, sizeof(float), (void *) &mindist));
 		clErrchk(clSetKernelArg(kernelGen, index++, sizeof(float), (void *) &maxdist));
 #endif
         clErrchk(clSetKernelArg(kernelGen, index++, sizeof(cl_mem), (void *) &rayBuffer));
@@ -2181,6 +2191,7 @@ unsigned int *DrawFrameVR(short bleft) {
 #ifdef PAPER_20190701
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *) &midwidth));
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *) &midheight));
+            clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(float), (void *) &mindist));
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(float), (void *) &maxdist));
 #endif
             clErrchk(clSetKernelArg(kernelRadiance, index++, sizeof(short), (void *) &j));
@@ -2355,7 +2366,9 @@ unsigned int *DrawFrameVR(short bleft) {
         clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(short), (void *) &height));
         clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(short), (void *) &midwidth));
         clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(short), (void *) &midheight));
+        clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(float), (void *) &mindist));
         clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(float), (void *) &maxdist));
+        clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(cl_mem), (void *) &resultBuffer));
         clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(cl_mem), (void *) &pixelBuffer));
 #if 0
         clErrchk(clSetKernelArg(kernelMedian, index++, sizeof(cl_mem), (void *) &npixelsBuffer));

@@ -1224,7 +1224,7 @@ __constant
  const short lightCnt,
  const short width, const short height,
 #ifdef PAPER_20190701
- const short midwidth, const short midheight, const float maxdist,
+ const short midwidth, const short midheight, const float mindist, const float maxdist,
 #endif
  const short curdepth,
 #if (ACCELSTR == 1)
@@ -1290,10 +1290,14 @@ __constant
     p0.x = x, p0.y = y;
     p1.x = midwidth, p1.y = midheight;
     const float d = dist(p1, p0);//sqrt((float)(midwidth - x) * (midwidth - x) + (float)(midheight - y) * (midheight - y));
+
+    if (d < mindist) return;
+
     const float prob = clamp(d / maxdist, 0.0f, 0.9f);
 
     float rand = GetRandom(&seedsInput[sgid2], &seedsInput[sgid2 + 1]);
     if (rand < prob) {
+        results[gid].depth_traversed = 1; //curdepth;
         terminated[sgid] = 1;
         return;
     }
@@ -1566,7 +1570,7 @@ __kernel void GenerateCameraRay_exp(
   __global unsigned int *seedsInput,
   const short width, const short height,
 #ifdef PAPER_20190701
-  const short midwidth, const short midheight, const float maxdist,
+  const short midwidth, const short midheight, const float mindist, const float maxdist,
 #endif
   __global Ray *rays, __global Vec *throughput, __global char *specularBounce, __global char *terminated, __global Result *results, __global FirstHitInfo *fhi, __global ToDiffInfo *tdi) {
  const int gid = get_global_id(0) + get_global_id(1) * width;
@@ -1590,6 +1594,7 @@ __kernel void GenerateCameraRay_exp(
  terminated[sgid] = 0;
  results[sgid].x = x, results[sgid].y = y;
  vclr(results[sgid].p);
+ results[sgid].depth_traversed = 0;
 
  fhi[sgid].x = x, fhi[sgid].y = y;
  fhi[sgid].idxShape = -1;
@@ -1918,7 +1923,7 @@ __kernel void GaussianFilter2D( __global unsigned int *input, __global FirstHitI
 }
 
 // __constant int WINDOW_SIZE=(int)sqrt((float)ARRAY_SIZE_ARG);
-__kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInfo *fhi, __global unsigned int *seedsInput, short width, short height, short midwidth, short midheight, const float maxdist, __global unsigned int* output
+__kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInfo *fhi, __global unsigned int *seedsInput, short width, short height, short midwidth, short midheight, const float mindist, const float maxdist, __global Result* results, __global unsigned int* output
 #if 0
     , __global unsigned int *pixels
 #endif
@@ -1935,6 +1940,14 @@ __kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInf
     const int sgid2 = sgid << 1;
 
 #if 1
+    //atomic_inc(&pixels[0]);
+    if (results[gid].depth_traversed == 1)
+    {
+        //atomic_inc(&pixels[1]);
+        output[y * width + x] = input[y * width + x]; //0xffff0000;//
+        return;
+    }
+    /*
     // probability-based filtering according to the gaze point
     float2 p0, p1;
     p0.x = x, p0.y = y;
@@ -1949,6 +1962,7 @@ __kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInf
         output[y * width + x] = input[y * width + x];
         return;
     }
+     */
 #else
     // 3 parts filtering according to the gaze point
     float nparts = 3.0f;
@@ -2010,7 +2024,7 @@ __kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInf
 #endif
     //bubbleSort(window, count + 1);
     unsigned int median = findMedian(window, count);
-    output[y * width + x] = median; //window[count / 2];
+    output[y * width + x] = median; //window[count / 2]; //0xffff0000; //
 }
 #endif
 

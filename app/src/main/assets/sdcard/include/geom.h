@@ -43,6 +43,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #ifdef EXP_KERNEL
 typedef struct {
 	short x, y;
+	short depth_traversed;
 	Vec p;
 } Result;
 #endif
