@@ -1520,12 +1520,27 @@ void *do_merge(void *arguments) {
         //bFinishMerge = 0;
         //pthread_mutex_lock(&lock_finishMerge);
 
+        for (register int index = 0; index < width * height; index++) {
+            if (ptdi[index].x != -1 && ptdi[index].y != -1 && ptdi[index].indexDiff != -1) {
+                int indexDiff = ptdi[index].indexDiff; //yDiff * width + xDiff;
+
+                if (g_pcurrentSampleDiff[indexDiff] < 1) {
+                    vassign(g_colorsDiff[indexDiff], ptdi[index].colDiff);
+                } else {
+                    const float k = 1.f / ((float) g_pcurrentSampleDiff[indexDiff] + 1.f);
+
+                    vmad(g_colorsDiff[indexDiff], (float) g_pcurrentSampleDiff[indexDiff], g_colorsDiff[indexDiff], ptdi[index].colDiff);
+                    vsmul(g_colorsDiff[indexDiff], k, g_colorsDiff[indexDiff]);
+                }
+            }
+        }
+
         for (register int thr = 0; thr < NUM_THREADS; thr++) {
             if (g_bLeft && thr % 2 != 0) continue;
             if (!g_bLeft && thr % 2 == 0) continue;
             if (!genDoneTemp[thr]) continue;
 
-            LOGI("Starting a merge thread #%d", thr);
+            //LOGI("Starting a merge thread #%d", thr);
 
             for (register int index = 0; index < width * height; index++) {
                 if (ptdiCPU[thr][index].x != -1 && ptdiCPU[thr][index].y != -1 && ptdiCPU[thr][index].indexDiff != -1) {
@@ -1541,21 +1556,6 @@ void *do_merge(void *arguments) {
                     }
 
                     g_pcurrentSampleDiff[indexDiff]++;
-                }
-            }
-        }
-
-        for (register int index = 0; index < width * height; index++) {
-            if (ptdi[index].x != -1 && ptdi[index].y != -1 && ptdi[index].indexDiff != -1) {
-                int indexDiff = ptdi[index].indexDiff; //yDiff * width + xDiff;
-
-                if (g_pcurrentSampleDiff[indexDiff] < 1) {
-                    vassign(g_colorsDiff[indexDiff], ptdi[index].colDiff);
-                } else {
-                    const float k = 1.f / ((float) g_pcurrentSampleDiff[indexDiff] + 1.f);
-
-                    vmad(g_colorsDiff[indexDiff], (float) g_pcurrentSampleDiff[indexDiff], g_colorsDiff[indexDiff], ptdi[index].colDiff);
-                    vsmul(g_colorsDiff[indexDiff], k, g_colorsDiff[indexDiff]);
                 }
             }
         }

@@ -920,9 +920,9 @@ __constant
     else if (shapes[id].refl == SPEC)
         ret = findSpecRefrPos(shapes, shapeCnt,
 #if (ACCELSTR == 1)
-        btn, btl,
+            btn, btl,
 #elif (ACCELSTR == 2)
-        kng, kngCnt, kn, knCnt,
+            kng, kngCnt, kn, knCnt,
 #endif
             fhi, cameraOrg, cameraDiff, &p);
 

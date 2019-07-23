@@ -895,9 +895,9 @@ void RadianceOnePathTracing(
         tdi->indexDiff = locPixelDiff;
 
         //atomic_inc(&currentSampleDiff[locPixelDiff]);
-		pthread_mutex_lock(&lock_diff);
-        currentSampleDiff[locPixelDiff]++;
-		pthread_mutex_unlock(&lock_diff);
+		//pthread_mutex_lock(&lock_diff);
+        //currentSampleDiff[locPixelDiff]++;
+		//pthread_mutex_unlock(&lock_diff);
         //__atomic_fetch_add(&currentSampleDiff[locPixelDiff], 1, __ATOMIC_SEQ_CST);
     }
   }
@@ -1089,9 +1089,9 @@ void RadianceOnePathTracing(
             tdi->indexDiff = locPixelDiff;
 
             //atomic_inc(&currentSampleDiff[locPixelDiff]);
-			pthread_mutex_lock(&lock_diff);
-			currentSampleDiff[locPixelDiff]++;
-			pthread_mutex_unlock(&lock_diff);
+			//pthread_mutex_lock(&lock_diff);
+			//currentSampleDiff[locPixelDiff]++;
+			//pthread_mutex_unlock(&lock_diff);
         }
     }
 #endif
@@ -1125,9 +1125,9 @@ void RadianceOnePathTracing(
             tdi->indexDiff = locPixelDiff;
 
             //atomic_inc(&currentSampleDiff[locPixelDiff]);
-			pthread_mutex_lock(&lock_diff);
-			currentSampleDiff[locPixelDiff]++;
-			pthread_mutex_unlock(&lock_diff);
+			//pthread_mutex_lock(&lock_diff);
+			//currentSampleDiff[locPixelDiff]++;
+			//pthread_mutex_unlock(&lock_diff);
         }
     }
 #endif
