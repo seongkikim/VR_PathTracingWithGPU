@@ -208,7 +208,7 @@ bool ReadTxt(char *fileName, bool bvr) {
 
 		int readValuesCount = fscanf(f, "%s", materialTypeString);
 		if (readValuesCount != 1) {
-			fprintf(stderr, "Failed to read material description type. Expected 1, found %d value(s)\n", readValuesCount);
+			LOGE("Failed to read material description type. Expected 1, found %d value(s)\n", readValuesCount);
 			exit(-1);
 		}
 
@@ -218,7 +218,7 @@ bool ReadTxt(char *fileName, bool bvr) {
 				&material->kd.s[0], &material->kd.s[1], &material->kd.s[2],
 				&material->sigma);
 			if (readValuesCount != 4) {
-				fprintf(stderr, "Failed to read matte material descriptor. Expected 4, found %d value(s)\n", readValuesCount);
+				LOGE("Failed to read matte material descriptor. Expected 4, found %d value(s)\n", readValuesCount);
 				exit(-1);
 			}
 			clamp(material->sigma, 0.f, 0.9f);
@@ -235,7 +235,7 @@ bool ReadTxt(char *fileName, bool bvr) {
 				&material->ks.s[0], &material->ks.s[1], &material->ks.s[2],
 				&material->roughness);
 			if (readValuesCount != 7) {
-				fprintf(stderr, "Failed to read plastic material descriptor. Expected 4, found %d value(s)\n", readValuesCount);
+				LOGE("Failed to read plastic material descriptor. Expected 4, found %d value(s)\n", readValuesCount);
 				exit(-1);
 			}
 		}
@@ -244,10 +244,10 @@ bool ReadTxt(char *fileName, bool bvr) {
 	// part 5: object counts: objects n
 	c = fscanf(f, "objects %u\n", &objectCount);
 	if (c < 1) {
-		fprintf(stderr, "Failed to read object count: %d\n", c);
+		LOGE("Failed to read object count: %d\n", c);
 		exit(-1);
 	}
-	fprintf(stderr, "Scene size: %d\n", objectCount);
+	LOGE("Scene size: %d\n", objectCount);
 
 	// part 6: object descriptors
 	objects = (ObjectTemp *)malloc(sizeof(ObjectTemp) * objectCount);
@@ -303,7 +303,7 @@ bool ReadTxt(char *fileName, bool bvr) {
 				&mat);
 
 			if (readValuesCount != 16) {
-				fprintf(stderr, "Failed to read triangle #%d: %d\n", lineIndex, readValuesCount);
+				LOGE("Failed to read triangle #%d: %d\n", lineIndex, readValuesCount);
 				exit(-1);
 			}
 			//            LOGI("triangle: %f %f %f   %f %f %f   %f %f %f   %f %f %f   %f %f %f    %d\n",
@@ -378,7 +378,7 @@ bool ReadTxt(char *fileName, bool bvr) {
 			//            LOGI("# of materials = %d\n", (int)num_materials);
 
 			unsigned int numTriangles = attrib.num_face_num_verts;
-			printf("Started reading model with %d triangles.\n", numTriangles);
+			LOGI("Started reading model with %d triangles.\n", numTriangles);
 
 			objects = (ObjectTemp *)realloc(objects, sizeof(ObjectTemp) * (objectCount + addedObjects + numTriangles));
 			LOGI("Reallocated objects to have %d positions.\n", objectCount + addedObjects + numTriangles);
@@ -507,6 +507,8 @@ bool ReadTxt(char *fileName, bool bvr) {
 			curShape++;
 		}
 	}
+
+	LOGI("Point count: %u, Sphere count: %u, Triangle count: %u", poiCnt, sphCnt, triCnt);
 
 	return true;
 }
