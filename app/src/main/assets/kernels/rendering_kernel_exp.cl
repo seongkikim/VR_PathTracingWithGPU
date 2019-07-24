@@ -1947,7 +1947,7 @@ __kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInf
         output[y * width + x] = input[y * width + x]; //
         return;
     }
-    /*
+
     // probability-based filtering according to the gaze point
     float2 p0, p1;
     p0.x = x, p0.y = y;
@@ -1962,7 +1962,6 @@ __kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInf
         output[y * width + x] = input[y * width + x];
         return;
     }
-     */
 #else
     // 3 parts filtering according to the gaze point
     float nparts = 3.0f;
