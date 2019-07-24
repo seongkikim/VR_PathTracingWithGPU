@@ -1254,7 +1254,7 @@ __constant
 
  const int x = results[gid].x;//gid % width; //
  const int y = results[gid].y;//gid / width; //
- const int sgid = y * width + x;
+ const int sgid = y * width + x; //(height - y - 1) * width + x;
  const int sgid2 = sgid << 1;
 
  if (terminated[sgid] != 1)
@@ -1297,7 +1297,7 @@ __constant
 
     float rand = GetRandom(&seedsInput[sgid2], &seedsInput[sgid2 + 1]);
     if (rand < prob) {
-        results[gid].depth_traversed = 1; //curdepth;
+        results[gid].depth_stopped = 1; //curdepth;
         terminated[sgid] = 1;
         return;
     }
@@ -1594,7 +1594,7 @@ __kernel void GenerateCameraRay_exp(
  terminated[sgid] = 0;
  results[sgid].x = x, results[sgid].y = y;
  vclr(results[sgid].p);
- results[sgid].depth_traversed = 0;
+ results[sgid].depth_stopped = 0;
 
  fhi[sgid].x = x, fhi[sgid].y = y;
  fhi[sgid].idxShape = -1;
@@ -1941,10 +1941,10 @@ __kernel void MedianFilter2D( __global unsigned int *input, __global FirstHitInf
 
 #if 1
     //atomic_inc(&pixels[0]);
-    if (results[gid].depth_traversed == 1)
+    if (results[gid].depth_stopped == 0)
     {
         //atomic_inc(&pixels[1]);
-        output[y * width + x] = input[y * width + x]; //0xffff0000;//
+        output[y * width + x] = input[y * width + x]; //
         return;
     }
     /*

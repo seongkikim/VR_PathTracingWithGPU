@@ -1174,7 +1174,7 @@ void RadiancePathTracing(
  ) {
  const int x = results[gid].x;//gid % width; //
  const int y = results[gid].y;//gid / width; //
- const int sgid = y * width + x;
+ const int sgid = y * width + x; //(height - y - 1) * width + x;
  const int sgid2 = sgid << 1;
  
  if (terminated[sgid] != 1)
@@ -1216,7 +1216,7 @@ void RadiancePathTracing(
 
     float rand = GetRandom(&seedsInput[sgid2], &seedsInput[sgid2 + 1]);
     if (rand < prob) {
-        results[gid].depth_traversed = 1; //curdepth;
+        results[gid].depth_stopped = 1; //curdepth;
         terminated[sgid] = 1;
         return;
     }

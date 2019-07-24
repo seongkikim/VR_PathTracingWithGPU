@@ -1682,7 +1682,7 @@ void *do_works(void *arguments) {
                     terminatedCPU[sgid] = 0;
                     resultCPU[sgid].x = x, resultCPU[sgid].y = ny;
                     vclr(resultCPU[sgid].p);
-                    resultCPU[sgid].depth_traversed = 0;
+                    resultCPU[sgid].depth_stopped = 0;
 
                     fhiCPU[index][sgid].x = x, fhi[sgid].y = ny;
                     fhiCPU[index][sgid].idxShape = -1;
