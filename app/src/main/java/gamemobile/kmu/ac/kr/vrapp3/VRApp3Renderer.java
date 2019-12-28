@@ -398,7 +398,7 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
     }
 
     public void onDrawEye(Eye eye) {
-        if (inv >= 200) return;
+        //if (inv >= 200) return;
         String strEyeType = new String();
 
         boolean bleft = false;
@@ -410,7 +410,10 @@ public class VRApp3Renderer implements GvrView.StereoRenderer { // GvrView.Rende
 
         Log.i("VRApp3Renderer", "Start of onDrawEye for the " + strEyeType +" eye");
 
-        int[] arr_pixels = updateRenderingVR(bleft);
+        int[] arr_pixels;
+
+        if (inv < 200) arr_pixels = updateRenderingVR(bleft);
+        else arr_pixels = new int[texW * texH * 4];
 
         if (arr_pixels == null)
         {
